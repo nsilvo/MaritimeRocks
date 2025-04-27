@@ -57,10 +57,10 @@ class CasparCGClient:
             try:
                 self.sock = socket.create_connection((self.host, self.port))
                 self.sock.settimeout(5)
-                logging.info(f"Connected to CasparCG server at {self.host}:{self.port}")
+                logging.info(f"\rConnected to CasparCG server at {self.host}:{self.port}")
                 break
             except Exception as e:
-                logging.error(f"Connection failed: {e}, retrying...")
+                logging.error(f"\rConnection failed: {e}, retrying...")
                 time.sleep(5)
 
     def send(self, command: str) -> None:
@@ -69,7 +69,7 @@ class CasparCGClient:
                 self.connect()
             try:
                 self.sock.sendall((command + '\r\n').encode('utf-8'))
-                logging.debug(f"Sent command: {command}")
+                logging.debug(f"\rSent command: {command}")
             except Exception:
                 self.connect()
                 self.sock.sendall((command + '\r\n').encode('utf-8'))
@@ -122,7 +122,7 @@ def parse_cls_line(line: str) -> Optional[Dict[str, Any]]:
         num, den = map(int, g['fps'].split('/'))
         fps = num / den if den else 0
         if fps == 0:
-            refresher_logger.debug(f"Skipping invalid FPS line: {line}")
+            refresher_logger.debug(f"\rSkipping invalid FPS line: {line}")
             return None
         duration = int(g['frames']) / fps
         ts = datetime.strptime(g['timestamp'], "%Y%m%d%H%M%S")
@@ -196,7 +196,7 @@ def keyboard_listener(play_next_event: threading.Event, host: str, port: int, co
                 stop_event.set()
                 os.kill(os.getpid(), signal.SIGINT)
         except Exception as e:
-            logging.error(f"Keyboard error: {e}")
+            logging.error(f"\rKeyboard error: {e}")
             time.sleep(1)
 # Playback Monitor
 class PlaybackMonitor(threading.Thread):
@@ -214,7 +214,7 @@ class PlaybackMonitor(threading.Thread):
         self.last_progress_percent = -10
 
     def run(self) -> None:
-        monitor_logger.info(f"[Monitor] 🟢 PlaybackMonitor started on {self.client.host}:{self.client.port} (layer {self.layer})")
+        monitor_logger.info(f"\r[Monitor] 🟢 PlaybackMonitor started on {self.client.host}:{self.client.port} (layer {self.layer})")
         try:
             while not self.stop_event.is_set():
                 try:
@@ -245,11 +245,11 @@ class PlaybackMonitor(threading.Thread):
                     else:
                         monitor_logger.debug("[Monitor] No <file> node found.")
                 except Exception as e:
-                    monitor_logger.error(f"[Monitor] ERROR polling INFO: {e}")
+                    monitor_logger.error(f"\r[Monitor] ERROR polling INFO: {e}")
                     time.sleep(2)
                 time.sleep(1)
         except Exception as e:
-            monitor_logger.critical(f"[Monitor] CRASH: {e}")
+            monitor_logger.critical(f"\r[Monitor] CRASH: {e}")
 
     def stop(self) -> None:
         self.stop_event.set()
@@ -298,14 +298,14 @@ class MediaRefresher(threading.Thread):
             scanned_paths = set()
 
             for line in lines:
-                refresher_logger.debug(f"CLS raw line: {line}")
+                refresher_logger.debug(f"\rCLS raw line: {line}")
                 parsed = parse_cls_line(line)
                 if parsed and parsed['type'] == 'MOVIE':
                     scanned_paths.add(parsed['path'])
                     cur.execute("SELECT id FROM media WHERE path = ?", (parsed['path'],))
                     if not cur.fetchone():
                         artist, title = extract_artist_title(parsed['path'].split('/')[-1])
-                        refresher_logger.info(f"Adding new media: {parsed['path']}")
+                        refresher_logger.debug(f"\rAdding new media: {parsed['path']}")
                         cur.execute('''INSERT INTO media (path, type, size_bytes, modified_ts, frames, fps, duration, last_seen,
                                     artist, title, release_year, description)
                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
@@ -318,14 +318,14 @@ class MediaRefresher(threading.Thread):
             existing_paths = {row[0] for row in cur.fetchall()}
             missing_paths = existing_paths - scanned_paths
             for path in missing_paths:
-                refresher_logger.info(f"Deleting missing media: {path}")
+                refresher_logger.debug(f"\rDeleting missing media: {path}")
                 cur.execute("DELETE FROM media WHERE path = ?", (path,))
 
             conn.commit()
             conn.close()
-            refresher_logger.info("Media refresh completed.")
+            refresher_logger.info("\rMedia refresh completed.")
         except sqlite3.OperationalError as e:
-            refresher_logger.error(f"SQLite error: {e}")
+            refresher_logger.error(f"\rSQLite error: {e}")
             time.sleep(1)
             self.refresh_media()
 
@@ -394,7 +394,7 @@ class PlaybackManager(threading.Thread):
             return None
 
         clip = random.choice(eligible)
-        playback_logger.info(f"Selected clip: {clip[1]}")
+        playback_logger.info(f"\rSelected clip: {clip[1]}")
         return clip
 
     def play_clip(self, media_id: int, path: str) -> None:
@@ -414,10 +414,14 @@ class PlaybackManager(threading.Thread):
             artist, title = extract_artist_title(path.split('/')[-1])
         conn.close()
 
-        banner_data = json.dumps({"artist": artist, "title": title})
-        self.client.send(f'CG 1 ADD 1 {self.config["now_play_name"]} 1 {banner_data}')
-        #playback_logger.debug(f"CG 1-{self.config["layer"]} ADD 1 {self.config["now_play_name"]} 1 {banner_data}")
-        playback_logger.info(f"Now playing: {artist} - {title}")
+        banner_data = json.dumps({"artist": artist, "song": title})
+        escaped_banner_data = json.dumps(banner_data)
+        playback_logger.info(f"{banner_data}")
+        playback_logger.info(f"{escaped_banner_data}")
+        #self.client.send(f'CG UPDATE 1 {escaped_banner_data}')
+        self.client.send(f'CG 1 ADD 1 {self.config["now_play_name"]} 1 {escaped_banner_data}')
+        #playback_logger.debug(f"\rCG 1-{self.config["layer"]} ADD 1 {self.config["now_play_name"]} 1 {escaped_banner_data}")
+        playback_logger.info(f"\rNow playing: {artist} - {title}")
 
     def stop(self) -> None:
         self.stop_event.set()
@@ -427,7 +431,7 @@ def watchdog(threads: Dict[str, threading.Thread], host: str, port: int, db_path
     while not stop_event.is_set():
         for name, thread in list(threads.items()):
             if not thread.is_alive() and not stop_event.is_set():
-                logging.error(f"Thread {name} stopped! Restarting...")
+                logging.error(f"\rThread {name} stopped! Restarting...")
                 if name == "monitor":
                     new_thread = PlaybackMonitor(host, port, play_next_event)
                 elif name == "refresher":
