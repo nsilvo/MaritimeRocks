@@ -1,0 +1,5 @@
+logs/automation.log
+logs/playback.log
+logs/refresher.log
+logs/monitor.log
+db/media_cache.db

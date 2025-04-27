@@ -39,9 +39,9 @@ def setup_logger(name: str, filename: str) -> logging.Logger:
     logger.addHandler(handler)
     return logger
 
-monitor_logger = setup_logger("monitor", "monitor.log")
-playback_logger = setup_logger("playback", "playback.log")
-refresher_logger = setup_logger("refresher", "refresher.log")
+monitor_logger = setup_logger("monitor", "logs/monitor.log")
+playback_logger = setup_logger("playback", "logs/playback.log")
+refresher_logger = setup_logger("refresher", "logs/refresher.log")
 
 # CasparCG Client
 class CasparCGClient:
@@ -476,8 +476,8 @@ def main() -> None:
     play_next_event = threading.Event()
 
     monitor = PlaybackMonitor(amcp_host, amcp_port, play_next_event)
-    refresher = MediaRefresher(amcp_host, amcp_port, 'media_cache.db')
-    playback = PlaybackManager(amcp_host, amcp_port, monitor, 'media_cache.db', playback_conf, play_next_event)
+    refresher = MediaRefresher(amcp_host, amcp_port, 'db/media_cache.db')
+    playback = PlaybackManager(amcp_host, amcp_port, monitor, 'db/media_cache.db', playback_conf, play_next_event)
 
     monitor.start()
     refresher.start()
