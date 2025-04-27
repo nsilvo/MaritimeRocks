@@ -39,9 +39,9 @@ def setup_logger(name: str, filename: str) -> logging.Logger:
     logger.addHandler(handler)
     return logger
 
-monitor_logger = setup_logger("monitor", "monitor.log")
-playback_logger = setup_logger("playback", "playback.log")
-refresher_logger = setup_logger("refresher", "refresher.log")
+monitor_logger = setup_logger("monitor", "logs/monitor.log")
+playback_logger = setup_logger("playback", "logs/playback.log")
+refresher_logger = setup_logger("refresher", "logs/refresher.log")
 
 # CasparCG Client
 class CasparCGClient:
@@ -455,7 +455,7 @@ def main() -> None:
         format='%(asctime)s %(levelname)s:%(message)s',
         handlers=[
             logging.StreamHandler(),
-            TimedRotatingFileHandler('automation.log', when='midnight', backupCount=7)
+            TimedRotatingFileHandler('logs/automation.log', when='midnight', backupCount=7)
         ]
     )
 
@@ -476,8 +476,8 @@ def main() -> None:
     play_next_event = threading.Event()
 
     monitor = PlaybackMonitor(amcp_host, amcp_port, play_next_event)
-    refresher = MediaRefresher(amcp_host, amcp_port, 'media_cache.db')
-    playback = PlaybackManager(amcp_host, amcp_port, monitor, 'media_cache.db', playback_conf, play_next_event)
+    refresher = MediaRefresher(amcp_host, amcp_port, 'db/media_cache.db')
+    playback = PlaybackManager(amcp_host, amcp_port, monitor, 'db/media_cache.db', playback_conf, play_next_event)
 
     monitor.start()
     refresher.start()
@@ -489,7 +489,7 @@ def main() -> None:
         "playback": playback
     }
 
-    threading.Thread(target=watchdog, args=(threads, amcp_host, amcp_port, 'media_cache.db', playback_conf, play_next_event), daemon=True).start()
+    threading.Thread(target=watchdog, args=(threads, amcp_host, amcp_port, 'db/media_cache.db', playback_conf, play_next_event), daemon=True).start()
     threading.Thread(target=keyboard_listener, args=(play_next_event, amcp_host, amcp_port, playback_conf, threads), daemon=True).start()
 
     play_next_event.set()  # trigger first playback
