@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Now Playing Lower Third (Smarter Expand Version)</title>
+<style>
+html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background-color: rgba(0,0,0,0);
+}
+
+/* Lower Third Box */
+#lower-third {
+    position: absolute;
+    bottom: -200px; /* Start below screen */
+    left: 50%;
+    transform: translateX(-50%);
+    background: linear-gradient(90deg, #002b5c, #005792);
+    border-radius: 20px;
+    padding: 20px 0;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.7);
+    width: 0;
+    height: 150px;
+    max-width: 1600px;
+    display: flex;
+    align-items: center;
+    overflow: visible;
+    transition: bottom 0.6s ease, width 1.5s ease, padding 0.4s ease;
+    z-index: 1;
+}
+
+/* Logo */
+#logo {
+    position: absolute;
+    bottom: -200px;
+    left: -100px;
+    height: 350px;
+    width: auto;
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+    transition: bottom 0.6s ease, transform 1.5s ease, opacity 1s ease, filter 1s ease;
+    z-index: 10;
+}
+
+/* Shimmer Animation */
+@keyframes shimmer {
+  0% { filter: brightness(1) contrast(1); }
+  50% { filter: brightness(1.8) contrast(1.5); }
+  100% { filter: brightness(1) contrast(1); }
+}
+.shimmer-effect {
+  animation: shimmer 1.2s ease-in-out forwards;
+}
+
+/* ========== Text Area Styling ========== */
+.text-container {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    opacity: 0; /* Fade in later */
+    margin-left: 300px; /* Leave space for logo */
+    padding-right: 40px;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+/* Text Styles */
+.now-playing, .artist, .song-title {
+    color: #fff;
+    font-weight: 700;
+    animation: flicker 1.5s infinite alternate; /* Fire flicker */
+    font-family: 'Poppins', sans-serif;
+}
+
+.now-playing {
+    font-size: 40px;
+    letter-spacing: 5px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+}
+
+.artist {
+    font-size: 48px;
+    margin-bottom: 8px;
+}
+
+.song-title {
+    font-size: 36px;
+    font-style: italic;
+    font-weight: 500;
+}
+
+/* Fire Flicker Animation */
+@keyframes flicker {
+  0% { text-shadow: 0 0 2px #ff6600, 0 0 5px #ff3300; }
+  20% { text-shadow: 0 0 8px #ff6600, 0 0 12px #ff3300; }
+  40% { text-shadow: 0 0 5px #ff6600, 0 0 10px #ff3300; }
+  60% { text-shadow: 0 0 12px #ff6600, 0 0 20px #ff3300; }
+  80% { text-shadow: 0 0 7px #ff6600, 0 0 15px #ff3300; }
+  100% { text-shadow: 0 0 10px #ff6600, 0 0 20px #ff3300; }
+}
+
+/* Typewriter Character Fade */
+.char {
+    opacity: 0;
+    display: inline-block;
+    transition: opacity 0.1s ease;
+}
+</style>
+</head>
+<body>
+
+<div id="lower-third">
+    <img id="logo" src="Maritime Rocks Logo.svg" alt="Logo">
+    <div class="text-container">
+        <div class="now-playing" id="now-playing-text"></div>
+        <div class="artist" id="artist-text"></div>
+        <div class="song-title" id="song-text"></div>
+    </div>
+</div>
+
+<script>
+let autoHideTimeout;
+let delayedStartTimeout;
+
+function createTypewriter(element, text, baseSpeed, callback) {
+    element.innerHTML = '';
+    const chars = text.split('');
+    const lowerThird = document.getElementById('lower-third');
+    const textContainer = document.querySelector('.text-container');
+
+    // Smart speed adjustment
+    let speed = baseSpeed;
+    if (chars.length > 100) {
+        speed = baseSpeed / 2;
+    }
+
+    chars.forEach((char, i) => {
+        const span = document.createElement('span');
+        span.className = 'char';
+        span.innerHTML = (char === ' ') ? '&nbsp;' : char;
+        element.appendChild(span);
+    });
+
+    const spans = element.querySelectorAll('.char');
+
+    spans.forEach((span, i) => {
+        setTimeout(() => {
+            span.style.opacity = 1;
+
+            // --- Check width on each letter
+            const textWidth = textContainer.scrollWidth;
+            let baseWidth = 1000;
+            let paddingExtra = 400;
+            let newWidth = textWidth + paddingExtra;
+
+            if (newWidth < baseWidth) newWidth = baseWidth;
+            if (newWidth > 1600) newWidth = 1600;
+
+            if (newWidth > parseInt(lowerThird.style.width)) {
+                lowerThird.style.width = newWidth + 'px';
+            }
+
+        }, i * speed);
+    });
+
+    if (callback) {
+        setTimeout(callback, chars.length * speed + 500);
+    }
+}
+
+function play(data = {}) {
+    clearTimeout(autoHideTimeout);
+    clearTimeout(delayedStartTimeout);
+
+    const lowerThird = document.getElementById('lower-third');
+    const logo = document.getElementById('logo');
+    const textContainer = document.querySelector('.text-container');
+
+    document.getElementById('now-playing-text').innerHTML = '';
+    document.getElementById('artist-text').innerHTML = '';
+    document.getElementById('song-text').innerHTML = '';
+    textContainer.style.opacity = 0;
+    logo.style.opacity = 1;
+    logo.style.transform = 'scale(1)';
+    lowerThird.style.width = '0';
+    lowerThird.style.bottom = '-200px';
+    logo.style.bottom = '-100px';
+
+    delayedStartTimeout = setTimeout(() => {
+
+        lowerThird.style.bottom = '40px';
+        logo.style.bottom = '-80px';
+        logo.style.transform = 'scale(1)';
+
+        setTimeout(() => {
+            lowerThird.style.width = '1000px';
+            logo.style.transform = 'scale(1.05) rotate(-360deg)';
+        }, 500);
+
+        setTimeout(() => {
+            textContainer.style.opacity = 1;
+
+            createTypewriter(document.getElementById('now-playing-text'), 'Now Playing:', 50, () => {
+                createTypewriter(document.getElementById('artist-text'), data.artist || 'Artist Name', 50, () => {
+                    createTypewriter(document.getElementById('song-text'), data.song || 'Song Title', 50, () => {
+                        // All text typed
+                    });
+                });
+            });
+
+            // Trigger shimmer effect
+            logo.classList.add('shimmer-effect');
+            setTimeout(() => {
+                logo.classList.remove('shimmer-effect');
+            }, 1300);
+
+        }, 2000);
+
+        autoHideTimeout = setTimeout(() => {
+            stop();
+        }, 12000);
+
+    }, 1000);
+}
+
+function stop() {
+    clearTimeout(autoHideTimeout);
+    clearTimeout(delayedStartTimeout);
+
+    const lowerThird = document.getElementById('lower-third');
+    const logo = document.getElementById('logo');
+    const textContainer = document.querySelector('.text-container');
+
+    textContainer.style.opacity = 0;
+    
+
+    setTimeout(() => {
+        lowerThird.style.width = '0';
+        logo.style.transform = 'scale(1) rotate(0deg)';
+    }, 500);
+
+    setTimeout(() => {
+        logo.style.bottom = '-80px';
+    }, 1200);
+
+    setTimeout(() => {
+        lowerThird.style.bottom = '-200px';
+    }, 3500);
+
+    setTimeout(() => {
+        logo.style.bottom = '-350px';
+    }, 1800);
+}
+
+function update(data = {}) {
+    play(data);
+}
+</script>
+
+</body>
+</html>

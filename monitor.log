@@ -1,0 +1,63 @@
+2025-04-27 16:09:38,282 INFO:[Monitor] 🟢 PlaybackMonitor started on 192.168.1.237:5250 (layer 1-10)
+2025-04-27 16:15:23,839 INFO:[Monitor] 🟢 PlaybackMonitor started on 192.168.1.237:5250 (layer 1-10)
+2025-04-27 16:19:06,409 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 16:20:03,544 DEBUG:[Monitor] No <file> node found.
+2025-04-27 16:20:04,546 DEBUG:[Monitor] No <file> node found.
+2025-04-27 16:20:05,548 DEBUG:[Monitor] No <file> node found.
+2025-04-27 16:20:06,549 DEBUG:[Monitor] No <file> node found.
+2025-04-27 16:20:07,551 DEBUG:[Monitor] No <file> node found.
+2025-04-27 16:20:08,553 DEBUG:[Monitor] No <file> node found.
+2025-04-27 16:20:09,555 DEBUG:[Monitor] No <file> node found.
+2025-04-27 16:20:10,558 DEBUG:[Monitor] No <file> node found.
+2025-04-27 16:20:11,561 DEBUG:[Monitor] No <file> node found.
+2025-04-27 16:20:12,564 DEBUG:[Monitor] No <file> node found.
+2025-04-27 16:20:13,565 DEBUG:[Monitor] No <file> node found.
+2025-04-27 16:20:14,569 DEBUG:[Monitor] No <file> node found.
+2025-04-27 16:20:15,571 DEBUG:[Monitor] No <file> node found.
+2025-04-27 16:20:16,573 DEBUG:[Monitor] No <file> node found.
+2025-04-27 16:20:17,574 DEBUG:[Monitor] No <file> node found.
+2025-04-27 16:20:18,576 DEBUG:[Monitor] No <file> node found.
+2025-04-27 16:20:19,579 DEBUG:[Monitor] No <file> node found.
+2025-04-27 16:20:20,582 DEBUG:[Monitor] No <file> node found.
+2025-04-27 16:20:21,584 DEBUG:[Monitor] No <file> node found.
+2025-04-27 16:20:22,588 DEBUG:[Monitor] No <file> node found.
+2025-04-27 16:20:23,590 DEBUG:[Monitor] No <file> node found.
+2025-04-27 16:20:24,592 DEBUG:[Monitor] No <file> node found.
+2025-04-27 16:23:02,976 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 16:25:28,343 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 16:29:06,894 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 16:33:28,590 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 16:55:57,078 INFO:[Monitor] 🟢 PlaybackMonitor started on 192.168.1.237:5250 (layer 1-10)
+2025-04-27 16:59:39,649 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 17:02:58,191 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 17:05:54,677 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 17:07:12,062 INFO:[Monitor] 🟢 PlaybackMonitor started on 192.168.1.237:5250 (layer 1-10)
+2025-04-27 17:11:26,715 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 17:16:24,479 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 17:20:06,101 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 17:23:45,681 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 17:27:50,308 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 17:30:44,805 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 17:35:25,558 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 17:39:32,209 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 17:50:16,945 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 17:54:36,667 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 17:58:20,303 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 18:02:02,897 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 18:05:50,512 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 18:12:14,500 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 18:16:47,226 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 18:20:30,868 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 18:24:05,454 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 18:27:54,070 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 18:33:06,963 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 18:39:11,921 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 18:43:49,656 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 18:47:47,277 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 18:54:42,437 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 18:59:22,177 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 19:03:47,877 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 19:06:46,368 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 19:10:41,006 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 19:14:43,670 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
+2025-04-27 19:18:02,247 INFO:[Monitor] 🛑 Clip finished. Triggering next playback.
