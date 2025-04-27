@@ -175,13 +175,19 @@ def keyboard_listener(play_next_event: threading.Event, host: str, port: int, co
                     client.send('STOP 1-30')
                 else:
                     logging.info("Manual: Showing logo.")
+                    client.send('MIXER 1-30 FILL 0.04 0.04 0.2 0.19')
                     client.send(f'PLAY 1-30 "{config["logo_path"]}" LOOP')
-                    client.send('MIXER 1-30 FILL 0.018 0.018 0.2 0.2')
                 logo_on = not logo_on
             elif c == 'i':
                 logging.info("Manual: Play stinger.")
-                client.send(f'PLAY 1-20 "{config["stinger_path"]}" AUTO')
+                client.send('PLAY 1-30 EMPTY MIX 60')
+                time.sleep(2)
+                #client.send('MIXER 1 CLEAR')
                 client.send('MIXER 1-20 CHROMA GREEN 0.1 0.2 1')
+                client.send(f'PLAY 1-20 "{config["stinger_path"]}" AUTO')
+                time.sleep(5)
+                client.send('MIXER 1-30 FILL 0.04 0.04 0.2 0.19')
+                client.send(f'PLAY 1-30 "{config["logo_path"]}" MIX 60 LOOP')
             elif c == 'm':
                 logging.info("Manual: Restart Monitor.")
                 old_monitor = threads.get('monitor')
@@ -341,6 +347,10 @@ class PlaybackManager(threading.Thread):
         self.config = config
         self.stop_event = threading.Event()
         self.play_next_event = play_next_event
+        self.track_counter = 0
+        self.stinger_interval = config.get('stinger_interval', 5)
+        self.stinger_path = config.get('stinger_path')
+
 
     def run(self) -> None:
         self.setup_logo()
@@ -362,8 +372,8 @@ class PlaybackManager(threading.Thread):
             self.play_clip(media_id, path)
 
     def setup_logo(self) -> None:
+        self.client.send('MIXER 1-30 FILL 0.04 0.04 0.2 0.19')
         self.client.send(f'PLAY 1-30 "{self.config["logo_path"]}" LOOP')
-        self.client.send('MIXER 1-30 FILL 0.018 0.018 0.2 0.2')
 
     def choose_clip(self) -> Optional[Tuple[int, str]]:
         conn = sqlite3.connect(self.db_path)
@@ -422,6 +432,18 @@ class PlaybackManager(threading.Thread):
         self.client.send(f'CG 1 ADD 1 {self.config["now_play_name"]} 1 {escaped_banner_data}')
         #playback_logger.debug(f"\rCG 1-{self.config["layer"]} ADD 1 {self.config["now_play_name"]} 1 {escaped_banner_data}")
         playback_logger.info(f"\rNow playing: {artist} - {title}")
+        self.track_counter += 1
+        if self.track_counter >= self.stinger_interval:
+            playback_logger.info("\rTriggering automatic stinger playback.")
+            self.client.send('PLAY 1-30 EMPTY MIX 30')
+            time.sleep(1)
+            #client.send('MIXER 1 CLEAR')
+            self.client.send('MIXER 1-20 CHROMA GREEN 0.1 0.2 1')
+            self.client.send(f'PLAY 1-20 "{self.config["stinger_path"]}" AUTO')
+            time.sleep(5)
+            self.client.send('MIXER 1-30 FILL 0.04 0.04 0.2 0.19')
+            self.client.send(f'PLAY 1-30 "{self.config["logo_path"]}" MIX 30 LOOP')
+            self.track_counter = 0
 
     def stop(self) -> None:
         self.stop_event.set()
