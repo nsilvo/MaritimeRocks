@@ -455,7 +455,7 @@ def main() -> None:
         format='%(asctime)s %(levelname)s:%(message)s',
         handlers=[
             logging.StreamHandler(),
-            TimedRotatingFileHandler('automation.log', when='midnight', backupCount=7)
+            TimedRotatingFileHandler('logs/automation.log', when='midnight', backupCount=7)
         ]
     )
 
@@ -489,7 +489,7 @@ def main() -> None:
         "playback": playback
     }
 
-    threading.Thread(target=watchdog, args=(threads, amcp_host, amcp_port, 'media_cache.db', playback_conf, play_next_event), daemon=True).start()
+    threading.Thread(target=watchdog, args=(threads, amcp_host, amcp_port, 'db/media_cache.db', playback_conf, play_next_event), daemon=True).start()
     threading.Thread(target=keyboard_listener, args=(play_next_event, amcp_host, amcp_port, playback_conf, threads), daemon=True).start()
 
     play_next_event.set()  # trigger first playback
