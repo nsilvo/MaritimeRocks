@@ -27,8 +27,8 @@ from typing import Any, Dict, Optional, Tuple
 # Global control
 stop_event = threading.Event()
 MEDIA_REFRESH_INTERVAL = 600  # seconds
-ANTI_REPEAT_SECONDS = 3 * 3600  # 3 hours
-ARTIST_REPEAT_SECONDS = 1 * 3600  # 1 hour
+ANTI_REPEAT_SECONDS = 1 * 3600  # 3 hours
+ARTIST_REPEAT_SECONDS = 0.2 * 3600  # 1 hour
 
 # Setup thread-specific loggers
 def setup_logger(name: str, filename: str) -> logging.Logger:
@@ -403,10 +403,9 @@ class PlaybackManager(threading.Thread):
         conn = sqlite3.connect(self.db_path)
         cur = conn.cursor()
         cutoff_track = datetime.utcnow().timestamp() - ANTI_REPEAT_SECONDS
-        cutoff_artist = datetime.utcnow().timestamp() - 3600  # 1 hour
         
         cur.execute("""
-            SELECT m.id, m.path, m.artist
+            SELECT m.id, m.path
             FROM media m
             LEFT JOIN (
                 SELECT media_id, MAX(strftime('%s', started)) AS last_played
@@ -421,39 +420,24 @@ class PlaybackManager(threading.Thread):
         eligible = cur.fetchall()
 
         if not eligible:
-            playback_logger.warning("No eligible clips found. Falling back to any clip.")
-            cur.execute("SELECT id, path FROM media WHERE path LIKE 'ROCK MUSIC/%' COLLATE NOCASE")
+            playback_logger.warning("\rNo eligible clips found. Falling back to any clip.")
+            cur.execute("""
+                SELECT id, path
+                FROM media 
+                WHERE path LIKE 'ROCK MUSIC/%'
+                 AND (block IS NULL or blocked = 0)
+                COLLATE NOCASE
+            """)
             eligible = cur.fetchall()
 
         
-        if not eligible:
-            conn.close()
-            return None
-        
-        # Fetch artists played within the last 1 hour
-        cur.execute("""
-                    SELECT DISTINCT m.artist
-                    FROM media m
-                    JOIN playlog p ON m.id = p.media_id
-                    WHERE strftime('%s', p.started) > ?
-                    """, (cutoff_artist,))
-        recent_artists = {row[0].lower() for row in cur.fetchall() if row[0]}
-        
         conn.close()
-        
-        MAX_RETRIES = 30
-        for _ in range(MAX_RETRIES):
-            clip = random.choice(eligible)
-            media_id, path, artist = clip
-            if artist and artist.lower() in recent_artists:
-                playback_logger.info(f"[PlaybackManager] Skipping {artist} (artist played recently).")
-                continue
-            playback_logger.info(f"[PlaybackManager] Selected clip: {path}")
-            return media_id, path
-        # Fallback: allow artist repeat if no luck
-        fallback = random.choice(eligible)
-        playback_logger.warning("[PlaybackManager] No clips passed artist cooldown after retries. Fallback.")
-        return fallback
+        if not eligible:
+            playback_logger.error("[PlaybackManager] No Clips Available for playback")
+            return None
+        media_id, path = random.choice(eligible)
+        playback_logger.info(f"[PlaybackManager] Selected Clip: {path}")
+        return media_id, path
 
 
     def play_clip(self, media_id: int, path: str) -> None:
