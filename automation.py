@@ -28,6 +28,7 @@ from typing import Any, Dict, Optional, Tuple
 stop_event = threading.Event()
 MEDIA_REFRESH_INTERVAL = 600  # seconds
 ANTI_REPEAT_SECONDS = 3 * 3600  # 3 hours
+ARTIST_REPEAT_SECONDS = 1 * 3600  # 1 hour
 
 # Setup thread-specific loggers
 def setup_logger(name: str, filename: str) -> logging.Logger:
@@ -197,6 +198,28 @@ def keyboard_listener(play_next_event: threading.Event, host: str, port: int, co
                 new_monitor = PlaybackMonitor(host, port, play_next_event)
                 new_monitor.start()
                 threads["monitor"] = new_monitor
+            elif c == 'b':
+                logging.info("[Keyboard] Blocking currently playing clip.")
+                try:
+                    conn = sqlite3.connect('db/media_cache.db')
+                    cur = conn.cursor()
+                    # Find currently playing clip (you can reuse monitor.layer)
+                    client.send('INFO 1-10')
+                    response = client.receive_info()
+                    xml_part = response.split('\r\n', 1)[-1]
+                    root = ET.fromstring(xml_part)
+                    file_node = root.find('.//layer_10/foreground/file')
+                    if file_node is not None:
+                        path_node = file_node.find('path')
+                    if path_node is not None:
+                        media_path = path_node.text.replace('media/', '').replace('\\', '/')
+                        cur.execute("UPDATE media SET blocked = 1 WHERE path = ?", (media_path,))
+                        conn.commit()
+                        logging.info(f"[Keyboard] Blocked {media_path} from future play.")
+                        conn.close()
+                except Exception as e:
+                    logging.error(f"[Keyboard] Error blocking media: {e}")
+
             elif c == 'q':
                 logging.info("Manual: Emergency quit.")
                 stop_event.set()
@@ -220,7 +243,7 @@ class PlaybackMonitor(threading.Thread):
         self.last_progress_percent = -10
 
     def run(self) -> None:
-        monitor_logger.info(f"\r[Monitor] 🟢 PlaybackMonitor started on {self.client.host}:{self.client.port} (layer {self.layer})")
+        monitor_logger.info(f"\r[Monitor] PlaybackMonitor started on {self.client.host}:{self.client.port} (layer {self.layer})")
         try:
             while not self.stop_event.is_set():
                 try:
@@ -237,7 +260,7 @@ class PlaybackMonitor(threading.Thread):
                                 self.total_time = float(times[1].text)
                                 playing_now = self.current_time < self.total_time - 0.5
                                 if self.playing and not playing_now:
-                                    monitor_logger.info("[Monitor] 🛑 Clip finished. Triggering next playback.")
+                                    monitor_logger.info("[Monitor] Clip finished. Triggering next playback.")
                                     self.play_next_event.set()
                                 self.playing = playing_now
 
@@ -290,7 +313,8 @@ class MediaRefresher(threading.Thread):
                 artist TEXT,
                 title TEXT,
                 release_year INT,
-                description TEXT
+                description TEXT,
+                blocked INT DEFAULT 0
             )''')
             cur.execute('''CREATE TABLE IF NOT EXISTS playlog (
                 id INTEGER PRIMARY KEY,
@@ -378,10 +402,11 @@ class PlaybackManager(threading.Thread):
     def choose_clip(self) -> Optional[Tuple[int, str]]:
         conn = sqlite3.connect(self.db_path)
         cur = conn.cursor()
-        cutoff = datetime.utcnow().timestamp() - ANTI_REPEAT_SECONDS
-
+        cutoff_track = datetime.utcnow().timestamp() - ANTI_REPEAT_SECONDS
+        cutoff_artist = datetime.utcnow().timestamp() - 3600  # 1 hour
+        
         cur.execute("""
-            SELECT m.id, m.path
+            SELECT m.id, m.path, m.artist
             FROM media m
             LEFT JOIN (
                 SELECT media_id, MAX(strftime('%s', started)) AS last_played
@@ -390,8 +415,9 @@ class PlaybackManager(threading.Thread):
             ) p ON m.id = p.media_id
             WHERE m.path LIKE 'ROCK MUSIC/%'
               AND (last_played IS NULL OR last_played < ?)
+              AND (m.blocked IS NULL OR m.blocked = 0)
             COLLATE NOCASE
-        """, (cutoff,))
+        """, (cutoff_track,))
         eligible = cur.fetchall()
 
         if not eligible:
@@ -399,13 +425,36 @@ class PlaybackManager(threading.Thread):
             cur.execute("SELECT id, path FROM media WHERE path LIKE 'ROCK MUSIC/%' COLLATE NOCASE")
             eligible = cur.fetchall()
 
-        conn.close()
+        
         if not eligible:
+            conn.close()
             return None
+        
+        # Fetch artists played within the last 1 hour
+        cur.execute("""
+                    SELECT DISTINCT m.artist
+                    FROM media m
+                    JOIN playlog p ON m.id = p.media_id
+                    WHERE strftime('%s', p.started) > ?
+                    """, (cutoff_artist,))
+        recent_artists = {row[0].lower() for row in cur.fetchall() if row[0]}
+        
+        conn.close()
+        
+        MAX_RETRIES = 30
+        for _ in range(MAX_RETRIES):
+            clip = random.choice(eligible)
+            media_id, path, artist = clip
+            if artist and artist.lower() in recent_artists:
+                playback_logger.info(f"[PlaybackManager] Skipping {artist} (artist played recently).")
+                continue
+            playback_logger.info(f"[PlaybackManager] Selected clip: {path}")
+            return media_id, path
+        # Fallback: allow artist repeat if no luck
+        fallback = random.choice(eligible)
+        playback_logger.warning("[PlaybackManager] No clips passed artist cooldown after retries. Fallback.")
+        return fallback
 
-        clip = random.choice(eligible)
-        playback_logger.info(f"\rSelected clip: {clip[1]}")
-        return clip
 
     def play_clip(self, media_id: int, path: str) -> None:
         self.client.send(f'PLAY 1-10 "{path}" MIX {self.config["mix_duration"]}')
