@@ -9,6 +9,7 @@ import configparser
 import json
 import logging
 import os
+import platform
 import random
 import re
 import signal
@@ -25,24 +26,44 @@ from logging.handlers import TimedRotatingFileHandler
 from typing import Any, Dict, Optional, Tuple
 
 # Global control
+IS_WINDOWS = platform.system() == "Windows"
+
+if not IS_WINDOWS:
+    import termios
+    import tty
+
 stop_event = threading.Event()
+CONSOLE_ACTIVE = sys.stdin.isatty()
+
 MEDIA_REFRESH_INTERVAL = 600  # seconds
 ANTI_REPEAT_SECONDS = 1 * 3600  # 3 hours
 ARTIST_REPEAT_SECONDS = 0.2 * 3600  # 1 hour
 
 # Setup thread-specific loggers
-def setup_logger(name: str, filename: str) -> logging.Logger:
+def setup_logger(name: str, filename: Optional[str] = None) -> logging.Logger:
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
-    handler = TimedRotatingFileHandler(filename, when='midnight', backupCount=7)
-    formatter = logging.Formatter('%(asctime)s %(levelname)s:%(message)s')
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
+
+    if filename:
+        file_handler = TimedRotatingFileHandler(filename, when='midnight', backupCount=7)
+        file_formatter = logging.Formatter('%(asctime)s %(levelname)s: %(message)s')
+        file_handler.setFormatter(file_formatter)
+        logger.addHandler(file_handler)
+
+    if name == "console_monitor" and CONSOLE_ACTIVE:
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_formatter = logging.Formatter('[%(asctime)s] %(message)s')
+        console_handler.setFormatter(console_formatter)
+        logger.addHandler(console_handler)
+
+    logger.propagate = False
     return logger
+
 
 monitor_logger = setup_logger("monitor", "logs/monitor.log")
 playback_logger = setup_logger("playback", "logs/playback.log")
 refresher_logger = setup_logger("refresher", "logs/refresher.log")
+console_logger = setup_logger("console_monitor", "")
 
 # CasparCG Client
 class CasparCGClient:
@@ -54,7 +75,7 @@ class CasparCGClient:
         self.connect()
 
     def connect(self) -> None:
-        while True:
+        while not stop_event.is_set():
             try:
                 self.sock = socket.create_connection((self.host, self.port))
                 self.sock.settimeout(5)
@@ -78,7 +99,7 @@ class CasparCGClient:
     def receive(self) -> str:
         with self.lock:
             buffer = ''
-            while True:
+            while not stop_event.is_set():
                 try:
                     data = self.sock.recv(4096)
                     if not data:
@@ -87,6 +108,8 @@ class CasparCGClient:
                     if '\r\n\r\n' in buffer:
                         break
                 except Exception:
+                    if stop_event.is_set():
+                        break
                     self.connect()
                     return self.receive()
             return buffer.strip()
@@ -94,7 +117,7 @@ class CasparCGClient:
     def receive_info(self) -> str:
         with self.lock:
             buffer = ''
-            while True:
+            while not stop_event.is_set():
                 try:
                     data = self.sock.recv(4096)
                     if not data:
@@ -103,6 +126,8 @@ class CasparCGClient:
                     if '</channel>' in buffer:
                         break
                 except Exception:
+                    if stop_event.is_set():
+                        break
                     self.connect()
                     return self.receive()
             return buffer.strip()
@@ -148,6 +173,10 @@ def extract_artist_title(filename: str) -> Tuple[str, str]:
 
 # Keyboard listener
 def keyboard_listener(play_next_event: threading.Event, host: str, port: int, config: Dict[str, Any], threads: Dict[str, threading.Thread]) -> None:
+    if IS_WINDOWS:
+        logging.warning("Keyboard control disabled on Windows.")
+        return
+    
     logging.info("Keyboard control: N=Next, S=Stop, L=Logo, I=Stinger, M=Restart Monitor, Q=Quit")
     client = CasparCGClient(host, port)
     logo_on = True
@@ -240,48 +269,69 @@ class PlaybackMonitor(threading.Thread):
         self.lock = threading.Lock()
         self.stop_event = threading.Event()
         self.last_log_time = 0
-        self.last_progress_percent = -10
+
+    def get_playback_status(self) -> Optional[Tuple[float, float]]:
+        """Poll CasparCG INFO and return (current_time, total_time) if available."""
+        try:
+            response = self.client.send_receive_info(f'INFO {self.layer}')
+            xml_part = response.split('\r\n', 1)[-1]
+            root = ET.fromstring(xml_part)
+
+            file_node = root.find('.//layer_10/foreground/file')
+            if file_node is not None:
+                times = file_node.findall('time')
+                if len(times) >= 2:
+                    current_time = float(times[0].text)
+                    total_time = float(times[1].text)
+                    return current_time, total_time
+        except Exception as e:
+            monitor_logger.error(f"[Monitor] Error getting playback status: {e}")
+        return None
+
+    def check_initial_playback(self) -> bool:
+        """Check if a clip is already playing when script starts."""
+        playback = self.get_playback_status()
+        if playback:
+            current_time, total_time = playback
+            progress = (current_time / total_time) * 100 if total_time > 0 else 0
+            if 0 < progress < 99:
+                monitor_logger.info(f"[Startup] Detected existing clip at {progress:.1f}% progress.")
+                return True
+        return False
 
     def run(self) -> None:
-        monitor_logger.info(f"\r[Monitor] PlaybackMonitor started on {self.client.host}:{self.client.port} (layer {self.layer})")
+        monitor_logger.info(f"[Monitor] PlaybackMonitor started on {self.client.host}:{self.client.port} (layer {self.layer})")
         try:
             while not self.stop_event.is_set():
-                try:
-                    response = self.client.send_receive_info(f'INFO {self.layer}')
-                    xml_part = response.split('\r\n', 1)[-1]
-                    root = ET.fromstring(xml_part)
+                playback = self.get_playback_status()
+                if playback:
+                    current_time, total_time = playback
+                    with self.lock:
+                        self.current_time = current_time
+                        self.total_time = total_time
 
-                    file_node = root.find('.//layer_10/foreground/file')
-                    if file_node is not None:
-                        times = file_node.findall('time')
-                        if len(times) >= 2:
-                            with self.lock:
-                                self.current_time = float(times[0].text)
-                                self.total_time = float(times[1].text)
-                                playing_now = self.current_time < self.total_time - 0.5
-                                if self.playing and not playing_now:
-                                    monitor_logger.info("[Monitor] Clip finished. Triggering next playback.")
-                                    self.play_next_event.set()
-                                self.playing = playing_now
+                        playing_now = self.current_time < self.total_time - 0.5
+                        if self.playing and not playing_now:
+                            monitor_logger.info("[Monitor] Clip finished. Triggering next playback.")
+                            self.play_next_event.set()
+                        self.playing = playing_now
 
-                            now = time.time()
-                            progress = (self.current_time / self.total_time) * 100 if self.total_time > 0 else 0
-                            if now - self.last_log_time > 5 or int(progress // 10) > (self.last_progress_percent // 10):
-                                sys.stdout.write(f"\r[Monitor] ⏯️ {self.current_time:6.1f}s / {self.total_time:6.1f}s ({progress:5.1f}% complete)")
-                                sys.stdout.flush()
-                                self.last_log_time = now
-                                self.last_progress_percent = int(progress)
-                    else:
-                        monitor_logger.debug("[Monitor] No <file> node found.")
-                except Exception as e:
-                    monitor_logger.error(f"\r[Monitor] ERROR polling INFO: {e}")
-                    time.sleep(2)
+                    now = time.time()
+                    progress = (self.current_time / self.total_time) * 100 if self.total_time > 0 else 0
+                    if now - self.last_log_time >= 1:
+                        if CONSOLE_ACTIVE:
+                            sys.stdout.write(f"\r[Monitor] Progress: {self.current_time:.1f}s / {self.total_time:.1f}s ({progress:.1f}% complete)   ")
+                            sys.stdout.flush()
+                        self.last_log_time = now
+                else:
+                    self.playing = False
                 time.sleep(1)
         except Exception as e:
-            monitor_logger.critical(f"\r[Monitor] CRASH: {e}")
+            monitor_logger.critical(f"[Monitor] CRASH: {e}")
 
     def stop(self) -> None:
         self.stop_event.set()
+
 
 # Media Refresher
 class MediaRefresher(threading.Thread):
@@ -504,6 +554,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', default='config.ini', help='Path to config file')
     parser.add_argument('--debug', action='store_true', help='Enable debug logging to console')
+    parser.add_argument('--no-keyboard', action='store_true', help='Disable keyboard control')
     args = parser.parse_args()
 
     config = configparser.ConfigParser()
@@ -512,12 +563,11 @@ def main() -> None:
     logging.basicConfig(
         level=logging.DEBUG if args.debug else logging.INFO,
         format='%(asctime)s %(levelname)s:%(message)s',
-        handlers=[
-            logging.StreamHandler(),
-            TimedRotatingFileHandler('logs/automation.log', when='midnight', backupCount=7)
+        handlers=[logging.StreamHandler(),TimedRotatingFileHandler('logs/automation.log', when='midnight', backupCount=7)
         ]
     )
-
+    disable_keyboard = args.no_keyboard or not sys.stdin.isatty() or IS_WINDOWS
+    
     amcp_host = config.get('amcp', 'host')
     amcp_port = config.getint('amcp', 'port')
 
@@ -549,16 +599,29 @@ def main() -> None:
     }
 
     threading.Thread(target=watchdog, args=(threads, amcp_host, amcp_port, 'db/media_cache.db', playback_conf, play_next_event), daemon=True).start()
-    threading.Thread(target=keyboard_listener, args=(play_next_event, amcp_host, amcp_port, playback_conf, threads), daemon=True).start()
+    
+    if not disable_keyboard:
+        threading.Thread(target=keyboard_listener, args=(play_next_event, amcp_host, amcp_port, {}, threads), daemon=True).start()
+    else:
+        logging.info("Keyboard listener disabled.")
 
     play_next_event.set()  # trigger first playback
 
     def shutdown(signum, frame):
         logging.info("Shutdown requested.")
         stop_event.set()
-        monitor.stop()
-        refresher.stop()
-        playback.stop()
+        try:
+            monitor.stop()
+        except Exception:
+            pass
+        try:
+            refresher.stop()
+        except Exception:
+            pass
+        try:
+            playback.stop()
+        except Exception:
+            pass
 
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)

@@ -2,6 +2,10 @@ import { useEffect, useState, useMemo } from "react";
 import { useReactTable, getCoreRowModel, flexRender } from "@tanstack/react-table";
 import { fetchMedia, updateMedia, deleteMedia } from "../api";
 
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import "jspdf-autotable";
+
 function MediaTable() {
   const [mediaList, setMediaList] = useState([]);
   const [search, setSearch] = useState("");
@@ -12,7 +16,35 @@ function MediaTable() {
     const { data } = await fetchMedia(categoryFilter);
     setMediaList(data);
   };
-
+  const exportToExcel = () => {
+    const worksheet = XLSX.utils.json_to_sheet(mediaList);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Media List");
+    XLSX.writeFile(workbook, "MaritimeRocks_Media.xlsx");
+  };
+  
+  const exportToPDF = () => {
+    const doc = new jsPDF();
+    const tableColumn = ["ID", "Artist", "Title", "Path", "Year", "Category"];
+    const tableRows = [];
+  
+    mediaList.forEach((media) => {
+      tableRows.push([
+        media.id,
+        media.artist || "",
+        media.title || "",
+        media.path || "",
+        media.release_year || "",
+        media.category || ""
+      ]);
+    });
+  
+    doc.autoTable({
+      head: [tableColumn],
+      body: tableRows,
+    });
+    doc.save("MaritimeRocks_Media.pdf");
+  };
   useEffect(() => {
     loadMedia();
   }, [categoryFilter]);
@@ -162,6 +194,9 @@ function MediaTable() {
           <option value="Advert">Advert</option>
           <option value="Promo">Promo</option>
         </select>
+
+        <button className="btn btn-primary" onClick={exportToExcel} > Export Excel </button>
+  <button className="btn btn-secondary" onClick={exportToPDF} > Export PDF </button>
       </div>
 
       {saveMessage && (
