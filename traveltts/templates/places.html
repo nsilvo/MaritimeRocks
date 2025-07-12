@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Nearby TfL Places</title>
+  <style>
+    body { font-family: sans-serif; margin:1em; }
+    nav a { margin-right:1em; }
+    table { border-collapse: collapse; width:100%; margin-top:1em; }
+    th, td { border:1px solid #ccc; padding:0.5em; }
+  </style>
+</head>
+<body>
+  <h1>Places within 1 km of Greenwich Park</h1>
+  <nav>
+    <a href="{{ url_for('index') }}">Home</a> |
+    <a href="{{ url_for('list_places') }}">Reload</a>
+  </nav>
+  <table>
+    <tr><th>Name</th><th>Type</th><th>Lat</th><th>Lon</th></tr>
+    {% for p in places %}
+      <tr>
+        <td>{{ p.commonName or p["commonName"] }}</td>
+        <td>{{ p.placeType or p["placeType"] }}</td>
+        <td>{{ p.lat or p["lat"] }}</td>
+        <td>{{ p.lon or p["lon"] }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4"><em>No places found.</em></td></tr>
+    {% endfor %}
+  </table>
+</body>
+</html>

@@ -1,0 +1,7 @@
+node_modules
+npm-debug.log
+uploads
+logs
+src
+.env
+.md

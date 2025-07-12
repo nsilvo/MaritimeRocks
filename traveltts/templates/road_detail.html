@@ -1,0 +1,63 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Corridor {{ corridor.displayName }} – Greenwich Travel Admin</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet/dist/leaflet.css"
+  />
+  <style>
+    body { font-family: sans-serif; margin:1em; }
+    nav a { margin-right:1em; }
+    #map { height: 400px; margin-bottom: 1em; }
+    .disruption {
+      margin-bottom:1em;
+      padding:0.5em;
+      border:1px solid #ccc;
+    }
+  </style>
+</head>
+<body>
+  <h1>
+    {{ corridor.displayName }}
+    ({{ corridor.statusSeverity }})
+  </h1>
+  <nav>
+    <a href="{{ url_for('index') }}">Home</a> |
+    <a href="{{ url_for('list_roads') }}">All Corridors</a>
+  </nav>
+
+  <div id="map"></div>
+
+  <h2>Current Disruptions</h2>
+  {% if disruptions %}
+    {% for d in disruptions %}
+      <div class="disruption">
+        <strong>{{ d.title or d.description }}</strong><br />
+        {{ d.description }}<br />
+        Severity: {{ d.severity }}<br />
+        {% if d.startDateTime %}From: {{ d.startDateTime }}{% endif %}
+      </div>
+    {% endfor %}
+  {% else %}
+    <p><em>No disruptions reported.</em></p>
+  {% endif %}
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    // Parse the parsed envelope list into JS
+    const envelope = {{ corridor.envelope|tojson }};
+    const coords = envelope.map(pt => [pt[1], pt[0]]);  // [lat, lon]
+    const map = L.map('map').fitBounds(coords);
+    L.tileLayer(
+      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+      }
+    ).addTo(map);
+    L.polygon(coords, { color: 'red' }).addTo(map);
+  </script>
+</body>
+</html>

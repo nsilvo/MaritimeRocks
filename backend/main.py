@@ -1,18 +1,29 @@
+# Updated FastAPI backend with PostgreSQL + multi-category support + playback logging
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
 from pydantic import BaseModel
-from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, Float, select, func, text
+from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, Float, select, func, text, insert, delete, and_, desc
+from sqlalchemy import update
 from sqlalchemy.orm import sessionmaker
 import requests
 import time
 import re
 import os
+import configparser
+from datetime import datetime, timedelta
 
-# Database setup
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATABASE_URL = f"sqlite:///{os.path.join(BASE_DIR, '..', 'db', 'media_cache.db')}"
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+# Load PostgreSQL config
+config = configparser.ConfigParser()
+config.read(os.path.join(os.path.dirname(__file__), "config.ini"))
+pg = config["postgres"]
+
+DATABASE_URL = (
+    f"postgresql+psycopg2://{pg['user']}:{pg['password']}@{pg['host']}:{pg['port']}/{pg['dbname']}"
+)
+
+engine = create_engine(DATABASE_URL, isolation_level="AUTOCOMMIT")
 SessionLocal = sessionmaker(bind=engine)
 metadata = MetaData()
 
@@ -20,24 +31,42 @@ metadata = MetaData()
 media = Table(
     "media", metadata,
     Column("id", Integer, primary_key=True),
-    Column("path", String),
+    Column("path", String, nullable=False),
+    Column("type", String),
+    Column("size_bytes", Integer),
+    Column("modified_ts", String),
+    Column("frames", Integer),
+    Column("fps", String),
+    Column("duration", Float),
+    Column("last_seen", String),
     Column("artist", String),
     Column("title", String),
     Column("release_year", Integer),
     Column("description", String),
-    Column("type", String),
-    Column("blocked", Integer),
-    Column("duration", Float),
-    Column("category", String)
+    Column("blocked", Integer, default=0),
 )
+
+category = Table(
+    "category", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("name", String, nullable=False, unique=True)
+)
+
+media_category = Table(
+    "media_category", metadata,
+    Column("media_id", Integer, nullable=False),
+    Column("category_id", Integer, nullable=False)
+)
+
 playlog = Table(
     "playlog", metadata,
     Column("id", Integer, primary_key=True),
     Column("media_id", Integer),
-    Column("started", String)
+    Column("started", String),
+    Column("duration", Float)
 )
 
-# FastAPI app
+# FastAPI app setup
 app = FastAPI()
 
 app.add_middleware(
@@ -59,7 +88,6 @@ class Media(BaseModel):
     type: Optional[str]
     blocked: Optional[int]
     duration: Optional[float]
-    category: Optional[str] = None
 
 class MediaUpdate(BaseModel):
     artist: Optional[str] = None
@@ -67,7 +95,6 @@ class MediaUpdate(BaseModel):
     release_year: Optional[int] = None
     description: Optional[str] = None
     blocked: Optional[int] = None
-    category: Optional[str] = None
 
 class DashboardStats(BaseModel):
     total_clips: int
@@ -75,89 +102,155 @@ class DashboardStats(BaseModel):
     clips_per_category: dict
     recent_played_clips: list
 
-# API routes
+class CategoryCreate(BaseModel):
+    name: str
 
+class CategoryList(BaseModel):
+    id: int
+    name: str
+
+class MediaCategoryAssign(BaseModel):
+    category_names: List[str]
+
+class PlaybackLogEntry(BaseModel):
+    media_id: int
+    timestamp: Optional[str] = None
+    duration: Optional[float] = None
+
+# Category Endpoints
+@app.get("/categories", response_model=List[CategoryList])
+def list_categories():
+    with engine.connect() as conn:
+        result = conn.execute(select(category)).fetchall()
+        return [dict(row._mapping) for row in result]
+
+@app.post("/categories", response_model=CategoryList)
+def create_category(cat: CategoryCreate):
+    with engine.begin() as conn:
+        existing = conn.execute(select(category).where(category.c.name == cat.name)).fetchone()
+        if existing:
+            return dict(existing._mapping)
+        result = conn.execute(insert(category).values(name=cat.name).returning(category))
+        return dict(result.fetchone()._mapping)
+
+@app.get("/media/{media_id}/categories", response_model=List[str])
+def get_categories_for_media(media_id: int):
+    with engine.connect() as conn:
+        result = conn.execute(
+            select(category.c.name)
+            .select_from(media_category.join(category))
+            .where(media_category.c.media_id == media_id)
+        ).fetchall()
+        return [row[0] for row in result]
+
+@app.post("/media/{media_id}/categories")
+def assign_categories(media_id: int, payload: MediaCategoryAssign):
+    with engine.begin() as conn:
+        cat_map = {}
+        for name in payload.category_names:
+            result = conn.execute(select(category).where(category.c.name == name)).fetchone()
+            if result:
+                cat_map[name] = result[0]
+            else:
+                inserted = conn.execute(insert(category).values(name=name).returning(category)).fetchone()
+                cat_map[name] = inserted[0]
+
+        conn.execute(delete(media_category).where(media_category.c.media_id == media_id))
+
+        for cat_id in cat_map.values():
+            conn.execute(insert(media_category).values(media_id=media_id, category_id=cat_id))
+    return {"message": "Categories updated"}
+
+# Playback Logging Endpoint
+@app.post("/log_play")
+def log_playback(entry: PlaybackLogEntry):
+    ts = entry.timestamp or datetime.utcnow().isoformat()
+    stmt = insert(playlog).values(media_id=entry.media_id, started=ts, duration=entry.duration)
+    with engine.begin() as conn:
+        conn.execute(stmt)
+    return {"message": "Playback logged"}
+
+# Helper for release year
 
 def clean_string(text):
     if not text:
         return text
-    text = re.sub(r'\(.*?\)', '', text)  # Remove (content)
-    text = re.sub(r'[^a-zA-Z0-9\s]', '', text)  # Remove special chars
-    text = re.sub(r'\s+', ' ', text)  # Collapse spaces
+    text = re.sub(r'\(.*?\)', '', text)
+    text = re.sub(r'[^a-zA-Z0-9\s]', '', text)
+    text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
 @app.post("/autofill_release_years")
 def autofill_release_years():
-    with engine.begin() as conn:
+    updated = 0
+    with engine.connect() as conn:
         result = conn.execute(
             select(media.c.id, media.c.artist, media.c.title)
             .where((media.c.release_year.is_(None)) | (media.c.release_year == 0))
+            .where(media.c.blocked == 0)
         )
         tracks = [dict(row._mapping) for row in result]
 
-        print(f"Found {len(tracks)} tracks missing release_year.")
+    for track in tracks:
+        artist = re.sub(r"\(.*?\)", "", (track.get("artist") or "")).strip()
+        title = re.sub(r"\(.*?\)", "", (track.get("title") or "")).strip()
+        if not artist or not title:
+            continue
 
-        updated = 0
-        for track in tracks:
-            artist = clean_string(track.get("artist"))
-            title = clean_string(track.get("title"))
+        query = f'artist:"{artist}" recording:"{title}"'
+        url = f"https://musicbrainz.org/ws/2/recording/?query={query}&fmt=json"
 
-            if not artist or not title:
-                continue
-
-            query = f'artist:"{artist}" recording:"{title}"'
-            url = f"https://musicbrainz.org/ws/2/recording/?query={query}&fmt=json"
-            print(f"Searching MusicBrainz: {url}")
-
-            tries = 0
-            while tries < 2:  # Max 2 tries
-                try:
-                    response = requests.get(
-                        url,
-                        headers={"User-Agent": "MaritimeRocksBot/1.0 (your@email.com)"},
-                        timeout=10
-                    )
-
-                    # Always throttle - 1 request per second
-                    time.sleep(1)
-
-                    if response.status_code == 503:
-                        print(f"MusicBrainz 503 encountered. Throttling... waiting 5 seconds before retry.")
-                        time.sleep(5)
-                        tries += 1
-                        continue  # Retry once
-                    elif response.status_code == 200:
-                        data = response.json()
-                        if data.get("recordings"):
-                            first_recording = data["recordings"][0]
-                            release_date = first_recording.get("first-release-date")
-                            if release_date:
-                                year = int(release_date[:4])
-                                print(f"Found year {year} for {artist} - {title}")
-                                update_stmt = media.update().where(media.c.id == track["id"]).values(release_year=year)
-                                conn.execute(update_stmt)
-                                updated += 1
-                            else:
-                                print(f"No release date found for {artist} - {title}")
-                        else:
-                            print(f"No recordings found for {artist} - {title}")
-                    else:
-                        print(f"MusicBrainz API error {response.status_code} for {artist} - {title}")
-                    break  # Exit retry loop
-                except Exception as e:
-                    print(f"Error processing {artist} - {title}: {e}")
-                    break
+        try:
+            response = requests.get(
+                url,
+                headers={"User-Agent": "MaritimeRocksBot/1.0 (you@example.com)"},
+                timeout=10
+            )
+            time.sleep(1)  # 1 request per second throttle
+            if response.status_code == 200:
+                data = response.json()
+                recordings = data.get("recordings", [])
+                if recordings:
+                    release_date = recordings[0].get("first-release-date")
+                    if release_date:
+                        try:
+                            year = int(release_date[:4])
+                            with engine.begin() as conn:
+                                stmt = update(media).where(media.c.id == track["id"]).values(release_year=year)
+                                conn.execute(stmt)
+                            updated += 1
+                        except Exception as e:
+                            print(f"Failed to update {track['id']}: {e}")
+        except Exception as e:
+            print(f"Request error for {artist} - {title}: {e}")
 
     return {"updated_entries": updated}
 
-@app.get("/media", response_model=List[Media])
-def list_media(category: Optional[str] = None):
-    stmt = select(media)
-    if category:
-        stmt = stmt.where(media.c.category == category)
+# Media search and list
+@app.get("/media", response_model=List[dict])
+def search_media(q: str = "", category_filter: str = None):
     with engine.connect() as conn:
-        result = conn.execute(stmt)
-        return [dict(row._mapping) for row in result]
+        stmt = select(media)
+        if q:
+            stmt = stmt.where(
+                media.c.artist.ilike(f"%{q}%") | media.c.title.ilike(f"%{q}%")
+            )
+        result = conn.execute(stmt).fetchall()
+        all_rows = [dict(row._mapping) for row in result]
+
+        if category_filter:
+            category_ids = conn.execute(
+                select(category.c.id).where(category.c.name == category_filter)
+            ).fetchall()
+            if category_ids:
+                allowed_ids = set(
+                    r[0] for r in conn.execute(
+                        select(media_category.c.media_id)
+                        .where(media_category.c.category_id == category_ids[0][0])
+                    ).fetchall()
+                )
+                all_rows = [row for row in all_rows if row["id"] in allowed_ids]
+        return all_rows
 
 @app.patch("/media/{media_id}")
 def update_media(media_id: int, data: MediaUpdate):
@@ -178,19 +271,69 @@ def get_dashboard():
     with engine.connect() as conn:
         total = conn.execute(select(func.count()).select_from(media)).scalar()
         blocked = conn.execute(select(func.count()).select_from(media).where(media.c.blocked == 1)).scalar()
-        category_counts = conn.execute(select(media.c.category, func.count()).group_by(media.c.category)).fetchall()
+        category_counts = conn.execute(
+            text("""
+            SELECT c.name, COUNT(mc.media_id)
+            FROM category c
+            LEFT JOIN media_category mc ON mc.category_id = c.id
+            GROUP BY c.name
+            """)
+        ).fetchall()
+
         recent_played = conn.execute(
             text("""
-            SELECT playlog.id, media.artist, media.title, playlog.started
+            SELECT playlog.id, media.artist, media.title, media.duration, media.fps, media.frames, playlog.started, playlog.duration
             FROM playlog
             LEFT JOIN media ON playlog.media_id = media.id
             ORDER BY playlog.started DESC
             LIMIT 10
             """)
         ).fetchall()
+
         return {
             "total_clips": total,
             "blocked_clips": blocked,
             "clips_per_category": {row[0] or "Uncategorized": row[1] for row in category_counts},
             "recent_played_clips": [dict(row._mapping) for row in recent_played]
         }
+class NextClip(BaseModel):
+    id: int
+    path: str
+    artist: Optional[str]
+    title: Optional[str]
+    release_year: Optional[int]
+    duration: Optional[float]
+
+# Endpoint: /next_clip
+@app.get("/next_clip", response_model=NextClip)
+def get_next_clip():
+    recent_cutoff = datetime.utcnow() - timedelta(hours=1)
+    with engine.connect() as conn:
+        subquery = (
+            select(playlog.c.media_id, func.max(playlog.c.started).label("last_played"))
+            .group_by(playlog.c.media_id)
+        ).subquery()
+
+        stmt = (
+            select(media)
+            .outerjoin(subquery, media.c.id == subquery.c.media_id)
+            .where(media.c.blocked == 0)
+            .where(media.c.type == 'Music')
+            .where(
+                (subquery.c.last_played.is_(None)) |
+                (subquery.c.last_played < recent_cutoff.isoformat())
+            )
+            .order_by(func.random())
+            .limit(1)
+        )
+
+        result = conn.execute(stmt).fetchone()
+        if not result:
+            raise HTTPException(status_code=404, detail="No eligible clip found")
+
+        row = dict(result._mapping)
+        if row.get("artist"):
+            row["artist"] = re.sub(r"[\[(](.*?)[\])]", "", row["artist"]).strip().title()
+        if row.get("title"):
+            row["title"] = re.sub(r"[\[(](.*?)[\])]", "", row["title"]).strip().title()
+        return NextClip(**row)

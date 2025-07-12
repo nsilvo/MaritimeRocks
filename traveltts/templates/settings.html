@@ -1,0 +1,75 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>TTS Settings – Greenwich Travel Admin</title>
+  <style>
+    body { font-family: sans-serif; margin:1em; }
+    nav a { margin-right:1em; }
+    form div { margin-bottom:1em; }
+    input[type=range] { width:300px; }
+    label { display:block; margin-bottom:0.3em; }
+  </style>
+</head>
+<body>
+  <h1>Edit TTS Engine Settings</h1>
+  <nav>
+    <a href="{{ url_for('index') }}">Home</a> |
+    <a href="{{ url_for('generate_report') }}">Generate Report</a> |
+    <a href="{{ url_for('list_reports') }}">Audio Reports</a> |
+    <a href="{{ url_for('list_voices') }}">Voice Samples</a>
+  </nav>
+
+  {% if error %}
+    <p style="color:red;">Error: {{ error }}</p>
+  {% endif %}
+
+  <form method="post">
+    <div>
+      <label for="language_code">Language Code</label>
+      <select name="language_code" id="language_code">
+        <option value="en-GB" {% if settings.language_code=='en-GB' %}selected{% endif %}>en-GB</option>
+        <option value="en-US" {% if settings.language_code=='en-US' %}selected{% endif %}>en-US</option>
+      </select>
+    </div>
+    <div>
+      <label for="voice_name">Voice Model</label>
+      <select name="voice_name" id="voice_name">
+        {% for v in ['en-GB-Wavenet-A','en-GB-Wavenet-B','en-GB-Wavenet-C','en-GB-Wavenet-D'] %}
+          <option value="{{v}}" {% if settings.voice_name==v %}selected{% endif %}>{{v}}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="speaking_rate">Speaking Rate: <span id="rate_val">{{ settings.speaking_rate }}</span></label>
+      <input type="range" id="speaking_rate" name="speaking_rate"
+             min="0.5" max="2.0" step="0.1"
+             value="{{ settings.speaking_rate }}">
+    </div>
+    <div>
+      <label for="pitch">Pitch (semitones): <span id="pitch_val">{{ settings.pitch }}</span></label>
+      <input type="range" id="pitch" name="pitch"
+             min="-10.0" max="10.0" step="0.5"
+             value="{{ settings.pitch }}">
+    </div>
+    <div>
+      <label for="audio_encoding">Audio Encoding</label>
+      <select id="audio_encoding" name="audio_encoding">
+        <option value="MP3" {% if settings.audio_encoding=='MP3' %}selected{% endif %}>MP3</option>
+        <option value="LINEAR16" {% if settings.audio_encoding=='LINEAR16' %}selected{% endif %}>WAV (Linear16)</option>
+      </select>
+    </div>
+    <button type="submit">Save Settings</button>
+  </form>
+
+  <script>
+    const rate = document.getElementById('speaking_rate');
+    const rateVal = document.getElementById('rate_val');
+    rate.addEventListener('input', () => rateVal.textContent = rate.value);
+
+    const pitch = document.getElementById('pitch');
+    const pitchVal = document.getElementById('pitch_val');
+    pitch.addEventListener('input', () => pitchVal.textContent = pitch.value);
+  </script>
+</body>
+</html>

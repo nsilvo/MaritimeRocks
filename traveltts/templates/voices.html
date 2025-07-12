@@ -1,0 +1,38 @@
+<!-- templates/voices.html -->
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Voice Samples – Greenwich Travel Admin</title>
+  <style>
+    body { font-family: sans-serif; margin:1em; }
+    nav a { margin-right:1em; }
+    .voice { margin-bottom:1em; }
+    audio { display:block; margin-top:0.5em; }
+  </style>
+</head>
+<body>
+  <h1>Available HD WaveNet Voices</h1>
+  <nav>
+    <a href="{{ url_for('index') }}">Home</a> |
+    <a href="{{ url_for('generate_report') }}">Generate Report</a> |
+    <a href="{{ url_for('list_reports') }}">Audio Reports</a> |
+    <a href="{{ url_for('tts_settings') }}">TTS Settings</a> |
+    <strong>Voice Samples</strong>
+  </nav>
+
+  {% if voices %}
+    {% for v in voices %}
+      <div class="voice">
+        <strong>{{ v }}</strong>
+        <audio controls preload="none">
+          <source src="{{ url_for('voice_sample', voice_name=v) }}" type="audio/mpeg">
+          Your browser does not support audio.
+        </audio>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p><em>No voices found for {{ settings.language_code }}.</em></p>
+  {% endif %}
+</body>
+</html>

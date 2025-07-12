@@ -1,0 +1,67 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Edit Polygon</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
+  <style>
+    body { font-family: sans-serif; margin:1em; }
+    #map { height: 500px; margin-bottom: 1em; }
+    nav a { margin-right: 1em; }
+    textarea { width: 100%; height: 100px; }
+  </style>
+</head>
+<body>
+  <h1>Edit Greenwich Bounding Polygon</h1>
+  <nav>
+    <a href="{{ url_for('index') }}">Home</a>
+  </nav>
+  {% if error %}
+    <p style="color:red;">{{ error }}</p>
+  {% endif %}
+  <form method="post">
+    <input type="hidden" id="coords_input" name="coords" value='{{ coords_json }}'/>
+    <div id="map"></div>
+    <button type="submit">Save Polygon</button>
+  </form>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+  <script>
+    const initialCoords = {{ coords_json|tojson }};
+    const map = L.map('map').setView([51.49, 0.06], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    const drawnItems = new L.FeatureGroup().addTo(map);
+    if (initialCoords.length) {
+      const existing = L.polygon(initialCoords);
+      drawnItems.addLayer(existing);
+      map.fitBounds(existing.getBounds());
+    }
+
+    const drawControl = new L.Control.Draw({
+      draw: { polyline: false, rectangle: false, circle: false, marker: false, circlemarker: false },
+      edit: { featureGroup: drawnItems }
+    });
+    map.addControl(drawControl);
+
+    function updateCoords() {
+      const layer = drawnItems.getLayers()[0];
+      if (!layer) return;
+      const latlngs = layer.getLatLngs()[0].map(ll => [ll.lat, ll.lng]);
+      document.getElementById('coords_input').value = JSON.stringify(latlngs);
+    }
+
+    map.on('draw:created', e => {
+      drawnItems.clearLayers();
+      drawnItems.addLayer(e.layer);
+      updateCoords();
+    });
+    map.on('draw:edited', updateCoords);
+    map.on('draw:deleted', () => { document.getElementById('coords_input').value = '[]'; });
+  </script>
+</body>
+</html>

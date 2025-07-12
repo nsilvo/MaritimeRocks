@@ -1,0 +1,372 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Frequency Viewer</title>
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Leaflet CSS -->
+  <link href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" rel="stylesheet"/>
+  <style>
+    html, body { height: 100%; margin: 0; padding: 0; }
+    /* fixed navbar */
+    body { padding-top: 56px; }
+    /* map & controls */
+    .map-container { position: relative; }
+    #map { height: 50vh; width: 100%; }
+    .legend-box {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: white;
+      padding: 8px;
+      border: 1px solid rgba(0,0,0,0.2);
+      border-radius: 4px;
+      font: 14px/1.4 sans-serif;
+      z-index: 1000;
+    }
+    .legend-box i {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    #table-container { height: 50vh; overflow-y: auto; }
+    .highlight { background-color: yellow !important; }
+    .sortable:hover { cursor: pointer; text-decoration: underline; }
+    .mod-popover { text-decoration: underline; cursor: help; }
+  </style>
+</head>
+<body>
+
+  <!-- Navbar -->
+  <nav class="navbar navbar-expand-lg navbar-light bg-light fixed-top">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="#">FrequencyApp</a>
+      <div class="collapse navbar-collapse">
+        <ul class="navbar-nav me-auto">
+          <li class="nav-item"><a class="nav-link active" href="/">Home</a></li>
+          <li class="nav-item"><a class="nav-link" href="/bookmarks">Manage Bookmarks</a></li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Map & Controls Row -->
+  <div class="container-fluid gx-0">
+    <div class="row gx-0">
+      <!-- Map Column -->
+      <div class="col-md-6 map-container">
+        <!-- Static Legend Above Map -->
+        <div class="legend-box">
+          <strong>Legend</strong><br>
+          <i style="background:blue;"></i> VHF (30–300 MHz)<br>
+          <i style="background:red;"></i> UHF (300–3000 MHz)<br>
+          <i style="background:green;"></i> Other
+        </div>
+        <div id="map"></div>
+      </div>
+      <!-- Controls Column -->
+      <div class="col-md-6 p-3">
+        <h5>Search Settings</h5>
+        <div class="mb-3">
+          <label for="radiusInput" class="form-label">Search Radius (mi)</label>
+          <input id="radiusInput" type="number" value="5" min="1" max="30" class="form-control w-50">
+        </div>
+        <div class="mb-3">
+          <label for="searchBox" class="form-label">Filter Results</label>
+          <input id="searchBox" type="text" placeholder="Search..." class="form-control">
+        </div>
+        <div class="mb-3">
+          <button class="btn btn-secondary me-2" onclick="clearSearch()">Clear Search</button>
+          <button class="btn btn-success me-2" onclick="addToBookmarks()">Add to Bookmarks</button>
+          <a href="/bookmarks" class="btn btn-info me-2">Manage Bookmarks</a>
+          <button class="btn btn-primary" onclick="useGeolocation()">Use My Location</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Frequency Table -->
+  <div id="table-container" class="container-fluid px-3">
+    <table id="freqTable" class="table table-striped table-hover mb-0">
+      <thead class="table-dark">
+        <tr>
+          <th><input type="checkbox" id="selectAll" onclick="toggleAll(this)"></th>
+          <th class="sortable" onclick="sortTable('Frequency (Hz)')">
+            Frequency (MHz) <span id="iconFreq">↕</span>
+          </th>
+          <th class="sortable" onclick="sortTable('Distance')">
+            Distance (mi) <span id="iconDist">↕</span>
+          </th>
+          <th>Modulation</th>
+          <th>Company</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <!-- JS Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.6/dist/umd/popper.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script>
+  // Animated modulation waveforms for popovers
+  const modulationInfo = {
+    'A': {
+      name: 'AM (DSB)',
+      desc: 'Carrier amplitude varies with the modulating signal.',
+      svg: `
+        <svg width="120" height="40" viewBox="0 0 120 40">
+          <path id="amWave" d="M0,20 Q10,10 20,20 T40,20 T60,20 T80,20 T100,20 T120,20" stroke="black" fill="none"/>
+          <circle r="3" fill="red">
+            <animateMotion dur="2s" repeatCount="indefinite">
+              <mpath xlink:href="#amWave"/>
+            </animateMotion>
+          </circle>
+        </svg>`
+    },
+    'F': {
+      name: 'FM',
+      desc: 'Carrier frequency deviates around center frequency.',
+      svg: `
+        <svg width="120" height="40" viewBox="0 0 120 40">
+          <path id="fmWave" d="
+            M0,20 C10,5 20,35 30,20
+            C40,5 50,35 60,20
+            C70,5 80,35 90,20
+            C100,5 110,35 120,20"
+            stroke="black" fill="none"/>
+          <circle r="3" fill="green">
+            <animateMotion dur="2s" repeatCount="indefinite">
+              <mpath xlink:href="#fmWave"/>
+            </animateMotion>
+          </circle>
+        </svg>`
+    },
+    'P': {
+      name: 'Pulsed',
+      desc: 'Carrier switched on/off in pulses.',
+      svg: `
+        <svg width="120" height="40" viewBox="0 0 120 40">
+          <path id="pulseWave" d="
+            M0,20 L20,20 L20,5 L40,5 L40,20
+            L60,20 L60,10 L80,10 L80,20
+            L100,20 L100,7 L120,7"
+            stroke="black" fill="none"/>
+          <circle r="3" fill="blue">
+            <animateMotion dur="2s" repeatCount="indefinite">
+              <mpath xlink:href="#pulseWave"/>
+            </animateMotion>
+          </circle>
+        </svg>`
+    },
+    'X': {
+      name: 'Other',
+      desc: 'Not defined by standard classes.',
+      svg: `
+        <svg width="120" height="40" viewBox="0 0 120 40">
+          <text x="50" y="25" font-size="24" fill="gray">?</text>
+        </svg>`
+    }
+    // you may add additional modulation types here
+  };
+
+  let map, center=[52.2405,-0.9027], radius=5,
+      dataRows=[], markers=[], circle, centerMarker,
+      sortDir={'Frequency (Hz)':1,'Distance':1};
+
+  function initMap(){
+    map = L.map('map').setView(center,12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
+    circle = L.circle(center, {radius:radius*1609.34, color:'blue', fill:false}).addTo(map);
+    centerMarker = L.circleMarker(center, {radius:6, color:'black', fillColor:'white', fillOpacity:1}).addTo(map);
+
+    map.fitBounds(circle.getBounds());
+
+    map.on('contextmenu', e => {
+      center = [e.latlng.lat, e.latlng.lng];
+      updateCircle();
+      fetchData();
+    });
+    document.getElementById('radiusInput').addEventListener('change', e=>{
+      radius = +e.target.value;
+      updateCircle();
+      fetchData();
+    });
+    document.getElementById('searchBox').addEventListener('input', filterTable);
+
+    fetchData();
+  }
+
+  function updateCircle(){
+    circle.setLatLng(center).setRadius(radius*1609.34);
+    centerMarker.setLatLng(center);
+  }
+
+  function useGeolocation(){
+    if(!navigator.geolocation) return alert('Geolocation unavailable');
+    navigator.geolocation.getCurrentPosition(pos=>{
+      center = [pos.coords.latitude, pos.coords.longitude];
+      updateCircle();
+      map.fitBounds(circle.getBounds());
+      fetchData();
+    }, err=>alert('Geolocation error: '+err.message));
+  }
+
+  function fetchData(){
+    fetch(`/api/data?lat=${center[0]}&lon=${center[1]}&radius=${radius}`)
+      .then(r=>r.json()).then(j=>{
+        dataRows = j.rows||[];
+        dataRows.sort((a,b)=>a.Distance - b.Distance);
+        updateTable(dataRows);
+        updateMap(dataRows);
+        initPopovers();
+      })
+      .catch(console.error);
+  }
+
+  function getColor(freqHz){
+    const m = freqHz/1e6;
+    if(m>=30 && m<300) return 'blue';
+    if(m>=300 && m<3000) return 'red';
+    return 'green';
+  }
+
+  function updateTable(rows){
+    const tbody = document.querySelector('#freqTable tbody');
+    tbody.innerHTML = '';
+    rows.forEach((r,i)=>{
+      const tr = document.createElement('tr');
+      const freqMHz = (r["Frequency (Hz)"]/1e6).toFixed(3);
+      tr.innerHTML = `
+        <td><input type="checkbox" class="row-cb"></td>
+        <td>${freqMHz}</td>
+        <td>${r.Distance}</td>
+        <td></td>
+        <td>${r["Licencee Company"]}</td>
+      `;
+      const key = (r.modulation.charAt(0)||'X').toUpperCase();
+      const info = modulationInfo[key] || modulationInfo['X'];
+      const span = document.createElement('span');
+      span.className = 'mod-popover'; span.tabIndex = 0;
+      span.dataset.modName = info.name;
+      span.dataset.modDesc = info.desc;
+      span.dataset.modSvg  = info.svg;
+      span.innerText = info.name;
+      tr.cells[3].appendChild(span);
+
+      tr.addEventListener('click', ()=>{
+        highlightRow(i);
+        highlightMapMarker(i);
+      });
+
+      tbody.appendChild(tr);
+    });
+  }
+
+  function updateMap(rows){
+    markers.forEach(m=>map.removeLayer(m));
+    markers = [];
+    rows.forEach((r,i)=>{
+      const icon = L.icon({
+        iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-${getColor(r["Frequency (Hz)"])}.png`,
+        shadowUrl:'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+        iconSize:[25,41], iconAnchor:[12,41],
+        popupAnchor:[1,-34], shadowSize:[41,41]
+      });
+      const mk = L.marker([r["Latitude(Deg)"], r["Longitude(Deg)"]], {icon})
+        .addTo(map)
+        .bindPopup(`<strong>${(r["Frequency (Hz)"]/1e6).toFixed(3)} MHz</strong><br>${r.modulation}`)
+        .on('click', ()=>highlightRow(i));
+      markers.push(mk);
+    });
+  }
+
+  function initPopovers(){
+    document.querySelectorAll('.mod-popover').forEach(el=>{
+      new bootstrap.Popover(el, {
+        trigger:'hover focus',
+        container:'body',
+        html:true,
+        sanitize:false,
+        content:
+          `<strong>${el.dataset.modName}</strong><br/>` +
+          `${el.dataset.modDesc}<br/>` +
+          `${el.dataset.modSvg}`
+      });
+    });
+  }
+
+  function highlightRow(i){
+    const rows = document.querySelectorAll('#freqTable tbody tr');
+    rows[i].classList.add('highlight');
+    rows[i].scrollIntoView({behavior:'smooth',block:'start'});
+    setTimeout(()=>rows[i].classList.remove('highlight'),2000);
+  }
+
+  function highlightMapMarker(i){
+    const mk = markers[i];
+    map.panTo(mk.getLatLng());
+    mk.setZIndexOffset(1000);
+    mk.openPopup();
+    setTimeout(()=>mk.setZIndexOffset(0),2000);
+  }
+
+  function toggleAll(src){
+    document.querySelectorAll('.row-cb').forEach(cb=>cb.checked = src.checked);
+  }
+
+  function addToBookmarks(){
+    const sel = [];
+    document.querySelectorAll('#freqTable tbody tr').forEach((tr,i)=>{
+      if(tr.querySelector('.row-cb').checked){
+        sel.push({
+          id: dataRows[i].id,
+          freq: parseFloat(tr.cells[1].innerText),
+          name: tr.cells[4].innerText || 'Unnamed'
+        });
+      }
+    });
+    if(!sel.length) return alert('No rows selected');
+    fetch('/add_bookmarks',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(sel)
+    }).then(r=>r.json()).then(j=>alert(`Added ${j.added} bookmarks.`));
+  }
+
+  function clearSearch(){
+    document.getElementById('searchBox').value = '';
+    filterTable();
+  }
+
+  function filterTable(){
+    const v = document.getElementById('searchBox').value.toLowerCase();
+    document.querySelectorAll('#freqTable tbody tr').forEach((tr,i)=>{
+      const ok = tr.innerText.toLowerCase().includes(v);
+      tr.style.display = ok ? '' : 'none';
+      if(markers[i]) ok ? markers[i].addTo(map) : map.removeLayer(markers[i]);
+    });
+  }
+
+  function sortTable(key){
+    sortDir[key] *= -1;
+    dataRows.sort((a,b) => (a[key] - b[key]) * sortDir[key]);
+    updateTable(dataRows);
+    updateMap(dataRows);
+    initPopovers();
+    document.getElementById(key==='Frequency (Hz)'?'iconFreq':'iconDist')
+      .textContent = sortDir[key]>0 ? '↑' : '↓';
+  }
+
+  window.onload = initMap;
+  </script>
+</body>
+</html>

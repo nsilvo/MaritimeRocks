@@ -22,7 +22,7 @@ from typing import Dict
 
 # Setup
 stop_event = False
-MEDIA_REFRESH_INTERVAL = 600
+MEDIA_REFRESH_INTERVAL = 120
 
 def setup_logger(name: str, filename: str) -> logging.Logger:
     logger = logging.getLogger(name)
@@ -46,19 +46,22 @@ def extract_artist_title(filename: str) -> (str, str):
 def determine_type(file_path: str) -> str:
     ext = os.path.splitext(file_path)[1].lower()
     if ext in ['.mp4', '.mov', '.mkv']:
-        return "Music"
-    elif ext in ['.png', '.jpg', '.jpeg']:
+        return "Video"
+    elif ext in ['.png', '.jpg', '.jpeg', '.svg']:
         return "Image"
     else:
         return "Other"
 
 def refresh_media(conn, scanner_url: str) -> None:
     try:
+        logger.debug(f"Requesting media list from: {scanner_url}")
         with urllib.request.urlopen(scanner_url) as resp:
             media_list = json.load(resp)
+        logger.debug(f"Received {len(media_list)} media items from scanner.")
 
         cur = conn.cursor()
 
+        logger.debug("Ensuring tables exist.")
         cur.execute("""
         CREATE TABLE IF NOT EXISTS media (
             id SERIAL PRIMARY KEY,
@@ -92,17 +95,20 @@ def refresh_media(conn, scanner_url: str) -> None:
 
         for item in media_list:
             if 'name' not in item or 'streams' not in item or not item['streams']:
+                logger.debug("Skipping item with missing name or streams.")
                 continue
 
             name = item['name']
             path = item['path'].replace('\\', '/').replace('media/', '')
             category_name = name.split('/')[0].strip().upper()
             file_type = determine_type(path)
+            logger.debug(f"Processing: {name} | Type: {file_type} | Category: {category_name}")
 
             scanned_paths.add(name)
 
             video_stream = next((s for s in item['streams'] if s['codec']['type'] == 'video'), None)
             if not video_stream:
+                logger.debug("No video stream found; skipping.")
                 continue
 
             fps = video_stream.get('time_base', '1/25')
@@ -113,7 +119,7 @@ def refresh_media(conn, scanner_url: str) -> None:
             ts = datetime.utcfromtimestamp(item['time'] / 1000)
             artist, title = extract_artist_title(name.split('/')[-1])
 
-            # Insert media
+            logger.debug(f"Inserting/Updating media: {name}")
             cur.execute("""
                 INSERT INTO media (path, type, size_bytes, modified_ts, frames, fps, duration, last_seen,
                     artist, title, release_year, description)
@@ -127,16 +133,15 @@ def refresh_media(conn, scanner_url: str) -> None:
                     last_seen = EXCLUDED.last_seen
             """, (name, file_type, item.get('size', 0), ts, frames, fps, duration, datetime.utcnow(), artist, title))
 
-            # Get media ID
             cur.execute("SELECT id FROM media WHERE path = %s", (name,))
             media_id = cur.fetchone()[0]
 
-            # Insert category
+            logger.debug(f"Inserting/Updating category: {category_name}")
             cur.execute("INSERT INTO category (name) VALUES (%s) ON CONFLICT DO NOTHING", (category_name,))
             cur.execute("SELECT id FROM category WHERE name = %s", (category_name,))
             category_id = cur.fetchone()[0]
 
-            # Insert mapping
+            logger.debug(f"Linking media_id {media_id} to category_id {category_id}")
             cur.execute("INSERT INTO media_category (media_id, category_id) VALUES (%s, %s) ON CONFLICT DO NOTHING", (media_id, category_id))
 
         conn.commit()

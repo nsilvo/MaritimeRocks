@@ -1,0 +1,41 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Audio Reports – Greenwich Travel Admin</title>
+  <style>
+    body { font-family: sans-serif; margin:1em; }
+    nav a { margin-right:1em; }
+    .report { margin-bottom:2em; padding-bottom:1em; border-bottom:1px solid #ccc; }
+    audio { display:block; margin:0.5em 0; }
+    .timestamp { color:#666; font-size:0.9em; }
+    .script { background:#f9f9f9; padding:0.5em; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>Audio Reports</h1>
+  <nav>
+    <a href="{{ url_for('index') }}">Home</a> |
+    <a href="{{ url_for('generate_report') }}">Generate Report</a> |
+    <a href="{{ url_for('tts_settings') }}">TTS Settings</a>
+  </nav>
+
+  {% if reports %}
+    {% for rpt in reports %}
+      <div class="report">
+        <h2>{{ rpt.filename }}</h2>
+        <p class="timestamp">Created at: {{ rpt.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+        <audio controls>
+          <source src="{{ url_for('static', filename='reports/' ~ rpt.filename) }}"
+                  type="audio/{{ rpt.filename.rsplit('.',1)[1] }}">
+          Your browser does not support audio.
+        </audio>
+        <h3>Script</h3>
+        <div class="script">{{ rpt.script }}</div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p><em>No audio reports have been generated yet.</em></p>
+  {% endif %}
+</body>
+</html>

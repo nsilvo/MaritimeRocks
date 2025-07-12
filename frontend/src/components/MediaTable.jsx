@@ -11,40 +11,54 @@ function MediaTable() {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [saveMessage, setSaveMessage] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const loadMedia = async () => {
-    const { data } = await fetchMedia(categoryFilter);
-    setMediaList(data);
+    try {
+      setLoading(true);
+      const { data } = await fetchMedia(categoryFilter);
+      setMediaList(data);
+    } catch (err) {
+      console.error("Failed to load media:", err);
+      alert("Failed to load media data.");
+    } finally {
+      setLoading(false);
+    }
   };
+
   const exportToExcel = () => {
-    const worksheet = XLSX.utils.json_to_sheet(mediaList);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Media List");
-    XLSX.writeFile(workbook, "MaritimeRocks_Media.xlsx");
+    try {
+      const worksheet = XLSX.utils.json_to_sheet(mediaList);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Media List");
+      XLSX.writeFile(workbook, "MaritimeRocks_Media.xlsx");
+    } catch (err) {
+      console.error("Excel export error:", err);
+      alert("Failed to export to Excel.");
+    }
   };
-  
+
   const exportToPDF = () => {
-    const doc = new jsPDF();
-    const tableColumn = ["ID", "Artist", "Title", "Path", "Year", "Category"];
-    const tableRows = [];
-  
-    mediaList.forEach((media) => {
-      tableRows.push([
+    try {
+      const doc = new jsPDF();
+      const tableColumn = ["ID", "Artist", "Title", "Path", "Year", "Category"];
+      const tableRows = mediaList.map((media) => [
         media.id,
         media.artist || "",
         media.title || "",
         media.path || "",
         media.release_year || "",
-        media.category || ""
+        media.category || "",
       ]);
-    });
-  
-    doc.autoTable({
-      head: [tableColumn],
-      body: tableRows,
-    });
-    doc.save("MaritimeRocks_Media.pdf");
+
+      doc.autoTable({ head: [tableColumn], body: tableRows });
+      doc.save("MaritimeRocks_Media.pdf");
+    } catch (err) {
+      console.error("PDF export error:", err);
+      alert("Failed to export to PDF.");
+    }
   };
+
   useEffect(() => {
     loadMedia();
   }, [categoryFilter]);
@@ -52,15 +66,10 @@ function MediaTable() {
   const handleUpdate = async (id, field, value) => {
     try {
       if (field === "release_year") {
-        if (value === "" || value === null) {
-          value = null;
-        } else {
-          const parsed = parseInt(value);
-          if (isNaN(parsed)) {
-            alert("Release year must be a number.");
-            return;
-          }
-          value = parsed;
+        value = value === "" || value === null ? null : parseInt(value);
+        if (isNaN(value)) {
+          alert("Release year must be a number.");
+          return;
         }
       }
       if (field === "blocked") {
@@ -68,7 +77,11 @@ function MediaTable() {
       }
 
       await updateMedia(id, { [field]: value });
-      await loadMedia();
+      setMediaList((prev) =>
+        prev.map((item) =>
+          item.id === id ? { ...item, [field]: value } : item
+        )
+      );
       setSaveMessage("Saved successfully.");
       setTimeout(() => setSaveMessage(""), 2000);
     } catch (err) {
@@ -79,15 +92,22 @@ function MediaTable() {
 
   const handleDelete = async (id) => {
     if (confirm("Are you sure you want to delete this clip?")) {
-      await deleteMedia(id);
-      await loadMedia();
+      try {
+        await deleteMedia(id);
+        setMediaList((prev) => prev.filter((item) => item.id !== id));
+      } catch (err) {
+        console.error("Delete error:", err);
+        alert("Failed to delete media entry.");
+      }
     }
   };
 
-  const filteredList = mediaList.filter(
-    (item) =>
-      item.artist?.toLowerCase().includes(search.toLowerCase()) ||
-      item.title?.toLowerCase().includes(search.toLowerCase())
+  const filteredList = useMemo(() =>
+    mediaList.filter(
+      (item) =>
+        item.artist?.toLowerCase().includes(search.toLowerCase()) ||
+        item.title?.toLowerCase().includes(search.toLowerCase())
+    ), [search, mediaList]
   );
 
   const columns = useMemo(() => [
@@ -149,7 +169,7 @@ function MediaTable() {
       cell: ({ row }) => (
         <button
           className={`btn btn-xs ${row.original.blocked ? "btn-error" : "btn-success"}`}
-          onClick={() => handleUpdate(row.original.id, "blocked", row.original.blocked ? 0 : 1)}
+          onClick={() => handleUpdate(row.original.id, "blocked", !row.original.blocked)}
         >
           {row.original.blocked ? "Blocked" : "Allowed"}
         </button>
@@ -166,7 +186,7 @@ function MediaTable() {
         </button>
       ),
     },
-  ], []);
+  ], [handleUpdate]);
 
   const table = useReactTable({
     data: filteredList,
@@ -195,22 +215,19 @@ function MediaTable() {
           <option value="Promo">Promo</option>
         </select>
 
-        <button className="btn btn-primary" onClick={exportToExcel} > Export Excel </button>
-  <button className="btn btn-secondary" onClick={exportToPDF} > Export PDF </button>
+        <button className="btn btn-primary" onClick={exportToExcel}>Export Excel</button>
+        <button className="btn btn-secondary" onClick={exportToPDF}>Export PDF</button>
       </div>
 
-      {saveMessage && (
-        <div className="alert alert-success mb-4">
-          {saveMessage}
-        </div>
-      )}
+      {saveMessage && <div className="alert alert-success mb-4">{saveMessage}</div>}
+      {loading && <div className="alert alert-info mb-4">Loading media...</div>}
 
       <div className="overflow-x-auto">
         <table className="table table-zebra w-full">
           <thead>
-            {table.getHeaderGroups().map(headerGroup => (
+            {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
-                {headerGroup.headers.map(header => (
+                {headerGroup.headers.map((header) => (
                   <th key={header.id}>
                     {flexRender(header.column.columnDef.header, header.getContext())}
                   </th>
@@ -219,9 +236,9 @@ function MediaTable() {
             ))}
           </thead>
           <tbody>
-            {table.getRowModel().rows.map(row => (
+            {table.getRowModel().rows.map((row) => (
               <tr key={row.id}>
-                {row.getVisibleCells().map(cell => (
+                {row.getVisibleCells().map((cell) => (
                   <td key={cell.id}>
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </td>

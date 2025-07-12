@@ -1,0 +1,154 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Bookmarks Editor</title>
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    /* Push content below fixed navbar */
+    body { padding-top: 56px; }
+    /* Full-width table */
+    .table-container { padding: 1rem; }
+    /* Inputs full width */
+    input[type="text"], input[type="number"] { width: 100%; }
+  </style>
+</head>
+<body>
+
+  <!-- Navbar -->
+  <nav class="navbar navbar-expand-lg navbar-light bg-light fixed-top">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="#">FrequencyApp</a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarsExample" aria-controls="navbarsExample" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarsExample">
+        <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+          <li class="nav-item">
+            <a class="nav-link" href="/">Home</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link active" aria-current="page" href="/bookmarks">Manage Bookmarks</a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main container -->
+  <div class="container-fluid table-container">
+    <h2>Bookmarks Editor</h2>
+    <p>Editing <code>/var/lib/openwebrx/bookmarks.json</code></p>
+
+    <form id="bookmarkForm">
+      <table class="table table-bordered table-striped">
+        <thead class="table-dark">
+          <tr>
+            <th>Name</th>
+            <th>Frequency (MHz)</th>
+            <th>Mode</th>
+            <th>Underlying</th>
+            <th>Description</th>
+            <th>Scannable</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="bookmarkTable"></tbody>
+      </table>
+      <button type="button" class="btn btn-primary" onclick="saveBookmarks()">💾 Save Changes</button>
+      <button type="button" class="btn btn-success ms-2" onclick="addBookmark()">➕ Add New Bookmark</button>
+    </form>
+  </div>
+
+  <!-- Bootstrap JS and dependencies -->
+  <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.6/dist/umd/popper.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.min.js"></script>
+
+  <script>
+  let bookmarks = [];
+
+  // Load bookmarks from the server
+  function loadBookmarks() {
+    fetch('/api/bookmarks')
+      .then(res => res.json())
+      .then(data => {
+        bookmarks = data;
+        renderTable();
+      })
+      .catch(err => alert('Error loading bookmarks: ' + err));
+  }
+
+  // Render table rows
+  function renderTable() {
+    const tbody = document.getElementById('bookmarkTable');
+    tbody.innerHTML = '';
+    bookmarks.forEach((bm, idx) => {
+      // Convert Hz to MHz display
+      const freqMHz = (bm.frequency / 1e6).toFixed(6);
+      const mode = bm.modulation || '';
+      const underlying = bm.underlying || '';
+      const desc = bm.description || '';
+      const scannable = bm.scannable ? 'checked' : '';
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><input type="text" value="${bm.name || ''}" onchange="bookmarks[${idx}].name = this.value"></td>
+        <td><input type="number" step="0.000001" value="${freqMHz}" onchange="bookmarks[${idx}].frequency = Math.round(parseFloat(this.value) * 1e6)"></td>
+        <td><input type="text" value="${mode}" onchange="bookmarks[${idx}].modulation = this.value"></td>
+        <td><input type="text" value="${underlying}" onchange="bookmarks[${idx}].underlying = this.value"></td>
+        <td><input type="text" value="${desc}" onchange="bookmarks[${idx}].description = this.value"></td>
+        <td class="text-center"><input type="checkbox" ${scannable} onchange="bookmarks[${idx}].scannable = this.checked"></td>
+        <td class="text-center">
+          <button class="btn btn-sm btn-danger" onclick="deleteBookmark(${idx})">🗑 Remove</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  // Delete a bookmark row
+  function deleteBookmark(index) {
+    if (confirm('Remove this bookmark?')) {
+      bookmarks.splice(index, 1);
+      renderTable();
+    }
+  }
+
+  // Add a new empty bookmark
+  function addBookmark() {
+    bookmarks.push({
+      name: '',
+      frequency: 100000000,  // default 100 MHz
+      modulation: 'fm',
+      underlying: '',
+      description: '',
+      scannable: true
+    });
+    renderTable();
+  }
+
+  // Save all bookmarks back to server
+  function saveBookmarks() {
+    fetch('/save_bookmarks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(bookmarks)
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        alert('Bookmarks saved successfully.');
+        loadBookmarks();
+      } else {
+        alert('Failed to save bookmarks.');
+      }
+    })
+    .catch(err => alert('Error saving bookmarks: ' + err));
+  }
+
+  // Initial load
+  window.onload = loadBookmarks;
+  </script>
+</body>
+</html>

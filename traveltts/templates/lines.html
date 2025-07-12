@@ -1,0 +1,64 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Custom Lines – Greenwich Travel Admin</title>
+  <style>
+    body { font-family: sans-serif; margin:1em; }
+    nav a { margin-right:1em; }
+    form div { margin-bottom:0.5em; }
+    textarea { width:100%; height:80px; }
+    input[type="datetime-local"] { width:200px; }
+    table { border-collapse: collapse; width:100%; margin-top:1em; }
+    th, td { border:1px solid #ccc; padding:0.5em; text-align:left; }
+    .btn-delete { background:none; border:none; color:red; cursor:pointer; }
+  </style>
+</head>
+<body>
+  <h1>Manage Custom Lines</h1>
+  <nav>
+    <a href="{{ url_for('index') }}">Home</a> |
+    <a href="{{ url_for('generate_report') }}">Generate Report</a> |
+    <a href="{{ url_for('tts_settings') }}">TTS Settings</a>
+  </nav>
+
+  <h2>Add a New Line</h2>
+  <form method="post">
+    <div>
+      <label for="name">Name:</label><br>
+      <input id="name" name="name" required>
+    </div>
+    <div>
+      <label for="script">Script (exact text to speak):</label><br>
+      <textarea id="script" name="script" required></textarea>
+    </div>
+    <div>
+      <label for="expires_at">Expires at (optional):</label><br>
+      <input id="expires_at" name="expires_at" type="datetime-local">
+    </div>
+    <button type="submit">Add Line</button>
+  </form>
+
+  <h2>Active Lines</h2>
+  {% if lines %}
+    <table>
+      <tr><th>Name</th><th>Script</th><th>Created</th><th>Expires</th><th>Action</th></tr>
+    {% for cl in lines %}
+      <tr>
+        <td>{{ cl.name }}</td>
+        <td>{{ cl.script }}</td>
+        <td>{{ cl.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td>{{ cl.expires_at.strftime('%Y-%m-%d %H:%M') if cl.expires_at else '—' }}</td>
+        <td>
+          <form method="post" action="{{ url_for('delete_line', line_id=cl.id) }}">
+            <button type="submit" class="btn-delete" title="Delete">&#10006;</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </table>
+  {% else %}
+    <p><em>No active custom lines.</em></p>
+  {% endif %}
+</body>
+</html>

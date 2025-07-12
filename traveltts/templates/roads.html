@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Road Corridors – Greenwich Travel Admin</title>
+  <style>
+    body { font-family: sans-serif; margin:1em; }
+    nav a { margin-right:1em; }
+    table { border-collapse: collapse; width:100%; }
+    th, td { border:1px solid #ccc; padding:0.5em; }
+  </style>
+</head>
+<body>
+  <h1>TfL Road Corridors</h1>
+  <nav>
+    <a href="{{ url_for('index') }}">Home</a> |
+    <a href="{{ url_for('list_roads') }}">All Corridors</a>
+  </nav>
+  <table>
+    <tr><th>ID</th><th>Name</th><th>Status</th><th>Description</th><th>Details</th></tr>
+    {% for c in corridors %}
+      <tr>
+        <td>{{ c.id }}</td>
+        <td>{{ c.displayName }}</td>
+        <td>{{ c.statusSeverity }}</td>
+        <td>{{ c.statusSeverityDescription }}</td>
+        <td><a href="{{ url_for('road_detail', corridor_id=c.id) }}">View</a></td>
+      </tr>
+    {% endfor %}
+  </table>
+</body>
+</html>

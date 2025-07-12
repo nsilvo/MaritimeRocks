@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Incidents{% if source %} – {{ source|upper }}{% endif %}</title>
+  <style>
+    body { font-family: sans-serif; margin:1em; }
+    nav a { margin-right:1em; }
+    table { border-collapse: collapse; width:100%; }
+    th, td { border:1px solid #ccc; padding:0.5em; text-align:left; }
+  </style>
+</head>
+<body>
+  <h1>Incidents{% if source %} from {{ source|upper }}{% endif %}</h1>
+  <nav>
+    <a href="{{ url_for('index') }}">Home</a> |
+    <a href="{{ url_for('refresh_incidents') }}">Refresh Data</a> |
+    <a href="{{ url_for('generate_report') }}">Generate Report</a>
+  </nav>
+
+  <table>
+    <tr>
+      <th>ID</th><th>Source</th><th>Type</th>
+      <th>Description</th><th>Lat</th><th>Lon</th>
+      <th>Severity</th><th>Timestamp</th>
+    </tr>
+    {% for inc in incidents %}
+    <tr>
+      <td>{{ inc.id }}</td>
+      <td>{{ inc.source }}</td>
+      <td>{{ inc.type }}</td>
+      <td>{{ inc.description }}</td>
+      <td>{{ inc.lat }}</td>
+      <td>{{ inc.lon }}</td>
+      <td>{{ inc.severity }}</td>
+      <td>{{ inc.timestamp }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8"><em>No incidents recorded.</em></td></tr>
+    {% endfor %}
+  </table>
+</body>
+</html>

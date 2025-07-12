@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: radio-traffic-app
+    ports:
+      - "3010:3010"
+    volumes:
+      - ./uploads:/usr/src/app/uploads
+      - ./logs:/usr/src/app/logs
+      - ./public:/usr/src/app/public
+    depends_on:
+      - db
+    environment:
+      - DATABASE_URL=postgres://user:pass@db:5432/trafficdb
+      - JWT_SECRET=supersecret
+    restart: unless-stopped
+
+  db:
+    image: postgres:15
+    container_name: radio-traffic-db
+    restart: always
+    environment:
+      POSTGRES_DB: trafficdb
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "15432:5432"
+
+volumes:
+  pgdata:
